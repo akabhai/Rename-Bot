@@ -1,136 +1,86 @@
-import os, json, time, asyncio, logging, subprocess
-from pyrogram import Client, errors
-import pyrogram.utils
+import math
+import time
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# 1. High-Speed Config
-pyrogram.utils.MIN_CHAT_ID = -999999999999
-pyrogram.utils.MIN_CHANNEL_ID = -100999999999999
+# IMPORTANT: Do NOT import "from helper.progress" inside this file.
+# The functions are already here!
 
-# Increase internal workers to handle faster data chunks
-WORKERS = 40 
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-from helper.database import find, used_limit, total_rename, total_size, find_one
-from helper.ffmpeg import fix_thumb, add_metadata
-from helper.progress import progress_for_pyrogram, humanbytes
-from helper.set import escape_invalid_curly_brackets
-from config import *
-
-# Load Payload
-PAYLOAD_RAW = os.environ.get("PAYLOAD", "{}")
-payload = json.loads(PAYLOAD_RAW)
-
-# STRICT INTEGER CONVERSION
-CHAT_ID = int(payload.get("chat_id", 0))
-USER_ID = int(payload.get("user_id", 0))
-MSG_ID = int(payload.get("message_id", 0))
-LOG_CHANNEL_ID = int(LOG_CHANNEL or 0) 
-
-NEW_NAME = payload.get("new_name", "renamed_file")
-MEDIA_TYPE = payload.get("media_type", "document")
-THUMB_ID = payload.get("thumb_id")
-CUSTOM_CAPTION = payload.get("caption")
-METADATA_STATUS = payload.get("metadata_status", False)
-METADATA_TEXT = payload.get("metadata_text", "By @TechifyBots")
-
-# 2. Setup Clients with High Workers
-bot = Client("GitHubWorker", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH, in_memory=True, workers=WORKERS)
-app = Client("PremWork", session_string=STRING_SESSION, api_id=API_ID, api_hash=API_HASH, in_memory=True, workers=WORKERS) if STRING_SESSION else None
-
-def get_duration(file_path):
-    try:
-        cmd = f'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{file_path}"'
-        duration = subprocess.check_output(cmd, shell=True).decode().strip()
-        return int(float(duration))
-    except: return 0
-
-async def run_worker():
-    await bot.start()
-    if app: await app.start()
+async def progress_for_pyrogram(current, total, ud_type, message, start):
+    now = time.time()
+    diff = now - start
     
-    processed_path = None
-    ph_path = None
-    path = None
-    
-    try:
-        msg = await bot.get_messages(CHAT_ID, MSG_ID)
-        file = msg.document or msg.video or msg.audio
-        if not file: return
+    # Update every 12 seconds to prevent Telegram rate limiting
+    if round(diff % 12.0) == 0 or current == total:
+        percentage = current * 100 / total
+        if diff <= 0:
+            return
 
-        status_msg = await bot.send_message(CHAT_ID, "<b>🚀 High-Speed Cloud Worker Started...</b>")
+        speed = current / diff
+        elapsed_time = round(diff) * 1000
         
-        if not os.path.isdir("downloads"): os.mkdir("downloads")
-        download_path = f"downloads/{int(time.time())}_{file.file_name if file.file_name else 'file'}"
-        
-        # 3. FAST DOWNLOAD
-        c_time = time.time()
-        path = await bot.download_media(
-            message=file,
-            file_name=download_path,
-            progress=progress_for_pyrogram,
-            progress_args=("📥 Downloading...", status_msg, c_time)
+        if speed > 0:
+            time_to_completion = round((total - current) / speed) * 1000
+        else:
+            time_to_completion = 0
+            
+        estimated_total_time = elapsed_time + time_to_completion
+
+        elapsed_time_str = TimeFormatter(milliseconds=elapsed_time)
+        estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
+
+        filled_blocks = math.floor(percentage / 5)
+        empty_blocks = 20 - filled_blocks
+        progress_bar = "■" * filled_blocks + "□" * empty_blocks
+
+        tmp = PROGRESS_BAR.format(
+            round(percentage, 2),
+            humanbytes(current),
+            humanbytes(total),
+            humanbytes(speed),
+            estimated_total_time_str if estimated_total_time_str != '' else '0 s',
+            progress_bar
         )
-
-        # 4. INSTANT PROCESSING
-        if METADATA_STATUS:
-            processed_path = f"downloads/meta_{NEW_NAME}"
-            res = await add_metadata(path, processed_path, METADATA_TEXT, status_msg)
-            if not res: processed_path = path
-        else:
-            processed_path = f"downloads/{NEW_NAME}"
-            os.rename(path, processed_path)
-
-        # 5. THUMBNAIL
-        if THUMB_ID:
-            ph_path = await bot.download_media(THUMB_ID)
-            
-        caption = f"**{NEW_NAME}**"
-        if CUSTOM_CAPTION:
-            caption = escape_invalid_curly_brackets(CUSTOM_CAPTION, ["filename", "filesize"]).format(
-                filename=NEW_NAME, filesize=humanbytes(file.file_size))
-
-        # 6. FAST UPLOAD
-        await status_msg.edit("<b>📤 Preparing High-Speed Upload...</b>")
         
-        use_premium = (file.file_size > 2000000000 and app is not None)
-        target = app if use_premium else bot
-        dest = LOG_CHANNEL_ID if use_premium else CHAT_ID
-        
-        c_time = time.time()
-        # Fixed the target_client variable bug here
-        if MEDIA_TYPE == "video":
-            sent_file = await target.send_video(
-                chat_id=dest, video=processed_path, caption=caption, thumb=ph_path,
-                duration=get_duration(processed_path), supports_streaming=True,
-                progress=progress_for_pyrogram, progress_args=("🚀 Uploading...", status_msg, c_time)
+        try:
+            await message.edit(
+                text=f"<b>{ud_type}</b>\n\n{tmp}"
             )
-        else:
-            sent_file = await target.send_document(
-                chat_id=dest, document=processed_path, caption=caption, thumb=ph_path,
-                progress=progress_for_pyrogram, progress_args=("🚀 Uploading...", status_msg, c_time)
-            )
+        except Exception:
+            pass
 
-        if use_premium:
-            await bot.copy_message(CHAT_ID, LOG_CHANNEL_ID, sent_file.id)
-            
-        await status_msg.delete()
+def humanbytes(size):
+    if not size:
+        return "0 B"
+    power = 2 ** 10
+    n = 0
+    Dic_powerN = {0: ' ', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
+    while size > power:
+        size /= power
+        n += 1
+    return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
 
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        try: await bot.send_message(CHAT_ID, f"❌ **Error:** `{str(e)}`")
-        except: pass
-    
-    finally:
-        # Cleanup
-        if processed_path and os.path.exists(processed_path): os.remove(processed_path)
-        if ph_path and os.path.exists(ph_path): os.remove(ph_path)
-        if path and os.path.exists(path): os.remove(path)
-        
-        if app: await app.stop(block=False)
-        await bot.stop(block=False)
+def TimeFormatter(milliseconds: int) -> str:
+    seconds, milliseconds = divmod(int(milliseconds), 1000)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    tmp = (
+        (str(days) + "d, ") if days else ""
+    ) + (
+        (str(hours) + "h, ") if hours else ""
+    ) + (
+        (str(minutes) + "m, ") if minutes else ""
+    ) + (
+        (str(seconds) + "s, ") if seconds else ""
+    ) + (
+        (str(milliseconds) + "ms, ") if milliseconds else ""
+    )
+    return tmp[:-2]
 
-if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run_worker())
+PROGRESS_BAR = """\
+{5}
+
+<b>📁 Size</b> : {1} | {2}
+<b>⏳️ Done</b> : {0}%
+<b>🚀 Speed</b> : {3}/s
+<b>⏰️ ETA</b> : {4} """

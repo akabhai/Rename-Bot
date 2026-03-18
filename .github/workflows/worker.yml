@@ -33,6 +33,6 @@ jobs:
           DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
           LOG_CHANNEL: ${{ secrets.LOG_CHANNEL }}
-          # The toJSON() function fixes the mapping error!
+          ADMIN: ${{ secrets.ADMIN }}  # <--- ADD THIS LINE
           PAYLOAD: ${{ toJSON(github.event.client_payload.data) }}
         run: python3 worker_script.py

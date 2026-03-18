@@ -39,10 +39,12 @@ async def trigger_worker(bot, update):
     file_msg = update.message.reply_to_message
     
     # Extract name from "Select Output Type\n\nFile Name :- name.mkv"
+    # Inside trigger_worker function in cb_data.py
     try:
-        new_name = update.message.text.split(":-")[-1].strip()
-    except:
-        new_name = "renamed_file"
+        # This splits the text and removes backticks (`) and spaces
+        new_name = update.message.text.split(":-")[-1].replace("`", "").strip()
+    except Exception:
+        new_name = "renamed_file.mkv"
         
     media_type = update.data.split("_")[1] 
 

@@ -5,37 +5,46 @@ from helper.database import find_one, used_limit
 from helper.database import daily as daily_
 from datetime import datetime
 from datetime import date as date_
-from helper.progress import humanbytes
-from helper.database import daily as daily_
 from helper.date import check_expi
 from helper.database import uploadlimit, usertype
 
-
-
+# Added locally to prevent Circular Import Crash
+def humanbytes(size):
+    if not size: return "0 B"
+    power = 2 ** 10
+    n = 0
+    Dic_powerN = {0: ' ', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
+    while size > power:
+        size /= power
+        n += 1
+    return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
 
 @Client.on_message(filters.private & filters.command(["myplan"]))
 async def start(client, message):
     used_ = find_one(message.from_user.id)
     daily = used_["daily"]
-    expi = daily - \
-        int(time.mktime(time.strptime(str(date_.today()), '%Y-%m-%d')))
+    expi = daily - int(time.mktime(time.strptime(str(date_.today()), '%Y-%m-%d')))
+    
     if expi != 0:
         today = date_.today()
         pattern = '%Y-%m-%d'
         epcho = int(time.mktime(time.strptime(str(today), pattern)))
         daily_(message.from_user.id, epcho)
         used_limit(message.from_user.id, 0)
+        
     _newus = find_one(message.from_user.id)
     used = _newus["used_limit"]
     limit = _newus["uploadlimit"]
     remain = int(limit) - int(used)
     user = _newus["usertype"]
     ends = _newus["prexdate"]
+    
     if ends:
         pre_check = check_expi(ends)
         if pre_check == False:
             uploadlimit(message.from_user.id, 2147483652)
             usertype(message.from_user.id, "Free")
+            
     if ends == None:
         text = f"<b>User ID :</b> <code>{message.from_user.id}</code> \n<b>Name :</b> {message.from_user.mention} \n\n<b>🏷 Plan :</b> {user} \n\n✓ Upload 2GB Files \n✓ Daily Upload : {humanbytes(limit)} \n✓ Today Used : {humanbytes(used)} \n✓ Remain : {humanbytes(remain)} \n✓ Timeout : 2 Minutes \n✓ Parallel process : Unlimited \n✓ Time Gap : Yes \n\n<b>Validity :</b> Lifetime"
     else:

@@ -56,16 +56,14 @@ async def take_screen_shot(video_file, output_directory, ttl):
 async def add_metadata(input_path, output_path, metadata, ms):
     try:
         await ms.edit("<i>I Found Metadata, Adding Into Your File ⚡</i>")
-        command = [
-            'ffmpeg', '-y', '-i', input_path, '-map', '0', '-c:s', 'copy', '-c:a', 'copy', '-c:v', 'copy',
-            '-metadata', f'title={metadata}',  # Set Title Metadata
-            '-metadata', f'author={metadata}',  # Set Author Metadata
-            '-metadata:s:s', f'title={metadata}',  # Set Subtitle Metadata
-            '-metadata:s:a', f'title={metadata}',  # Set Audio Metadata
-            '-metadata:s:v', f'title={metadata}',  # Set Video Metadata
-            '-metadata', f'artist={metadata}',  # Set Artist Metadata
-            output_path
-        ]
+       command = [
+    'ffmpeg', '-y', '-i', input_path, '-map', '0', 
+    '-c', 'copy', # Use stream copy (no re-encoding)
+    '-metadata', f'title={metadata}', 
+    '-metadata', f'artist={metadata}',
+    '-preset', 'ultrafast', # Speed boost
+    output_path
+]
         
         process = await asyncio.create_subprocess_exec(
             *command,

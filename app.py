@@ -3,8 +3,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def hello_world():
-    return 'Rahul'
-
+    return 'Bot is Running!'
 
 if __name__ == "__main__":
     app.run()

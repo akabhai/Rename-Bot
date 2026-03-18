@@ -6,9 +6,10 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ForceRepl
 from helper.database import find, dateupdate, find_one
 from config import *
 
-# GitHub Configuration (Add these to your Render Environment Variables)
-# GITHUB_TOKEN: Your Personal Access Token (PAT)
-# GITHUB_REPO: Your username/repository_name (e.g., "TechifyBots/Rename-Bot")
+# ADD THIS LINE - It fixes the ImportError
+app = Client("PremiumClient", api_id=API_ID, api_hash=API_HASH, session_string=STRING_SESSION) if STRING_SESSION else None
+
+# GitHub Configuration
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 
@@ -33,31 +34,29 @@ async def rename(bot, update):
 
 @Client.on_callback_query(filters.regex("upload_document|upload_video|upload_audio"))
 async def trigger_worker(bot, update):
-    # 1. Gather Data from Database and Message
     user_id = update.from_user.id
     chat_id = update.message.chat.id
-    # Get the file message (the one being replied to)
     file_msg = update.message.reply_to_message
     
-    # Extract the new name from the message text (set by filedetect.py)
-    # The message text looks like: "Select Output Type\n\nFile Name :- name.mkv"
-    new_name = update.message.text.split(":-")[-1].strip()
-    media_type = update.data.split("_")[1] # "document", "video", or "audio"
+    # Extract name from "Select Output Type\n\nFile Name :- name.mkv"
+    try:
+        new_name = update.message.text.split(":-")[-1].strip()
+    except:
+        new_name = "renamed_file"
+        
+    media_type = update.data.split("_")[1] 
 
-    # Get User Settings from Database
     user_data = find(user_id)
-    thumb_id = user_data[0] # file_id of thumbnail
+    thumb_id = user_data[0]
     caption = user_data[1]
     metadata_status = user_data[2]
     metadata_text = user_data[3]
 
-    # Check if GitHub configuration is missing
     if not GITHUB_TOKEN or not GITHUB_REPO:
-        return await update.message.edit("<b>❌ Admin Error:</b> `GITHUB_TOKEN` or `GITHUB_REPO` is not set in Render Variables!")
+        return await update.message.edit("<b>❌ Admin Error:</b> `GITHUB_TOKEN` or `GITHUB_REPO` missing!")
 
-    await update.message.edit("<b>⏳ Sending request to Cloud Worker (GitHub Actions)...</b>")
+    await update.message.edit("<b>⏳ Signaling Cloud Worker (GitHub)...</b>")
 
-    # 2. Prepare JSON Payload for GitHub
     payload_data = {
         "chat_id": chat_id,
         "user_id": user_id,
@@ -71,7 +70,6 @@ async def trigger_worker(bot, update):
         "log_channel": LOG_CHANNEL
     }
 
-    # 3. Trigger GitHub Action Dispatch
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
@@ -79,20 +77,15 @@ async def trigger_worker(bot, update):
     
     dispatch_url = f"https://api.github.com/repos/{GITHUB_REPO}/dispatches"
     json_body = {
-        "event_type": "start_rename", # Match this in your .yml file
-        "client_payload": payload_data
+        "event_type": "start_rename",
+        "client_payload": {"data": payload_data}
     }
 
     try:
         response = requests.post(dispatch_url, headers=headers, json=json_body)
         if response.status_code == 204:
-            await update.message.edit(
-                f"<b>🚀 Worker Assigned!</b>\n\n"
-                f"<b>📁 File:</b> `{new_name}`\n"
-                f"<b>⚡ Status:</b> Processing on GitHub Cloud...\n\n"
-                "<i>Please wait, you will receive the file once finished.</i>"
-            )
+            await update.message.edit(f"<b>🚀 Worker Assigned!</b>\n\n<b>📁 File:</b> `{new_name}`\n<b>⚡ Status:</b> Processing on GitHub...")
         else:
-            await update.message.edit(f"<b>❌ GitHub Error:</b> {response.status_code}\n`{response.text}`")
+            await update.message.edit(f"<b>❌ GitHub Error:</b> {response.status_code}")
     except Exception as e:
         await update.message.edit(f"<b>❌ Request Failed:</b> {str(e)}")

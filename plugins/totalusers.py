@@ -2,7 +2,7 @@ from config import *
 from pyrogram import Client, filters
 from pyrogram.types import ( InlineKeyboardButton, InlineKeyboardMarkup)
 from helper.database import botdata, find_one, total_user,getid
-from helper.progress import humanbytes
+from helper.utils import humanbytes
 
 token = BOT_TOKEN
 botid = token.split(':')[0]

@@ -27,14 +27,12 @@ jobs:
 
       - name: Run Cloud Worker
         env:
-          # Pass all secrets from your GitHub Secrets into Environment
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
-          STRING_SESSION: ${{ secrets.STRING_SESSION }}
-          LOG_CHANNEL: ${{ secrets.LOG_CHANNEL }}
-          # The data sent from Render
-          PAYLOAD: ${{ github.event.client_payload.data }}
+          API_ID: "${{ secrets.API_ID }}"
+          API_HASH: "${{ secrets.API_HASH }}"
+          BOT_TOKEN: "${{ secrets.BOT_TOKEN }}"
+          DATABASE_URL: "${{ secrets.DATABASE_URL }}"
+          DATABASE_NAME: "${{ secrets.DATABASE_NAME }}"
+          STRING_SESSION: "${{ secrets.STRING_SESSION }}"
+          LOG_CHANNEL: "${{ secrets.LOG_CHANNEL }}"
+          PAYLOAD: "${{ github.event.client_payload.data }}"
         run: python3 worker_script.py

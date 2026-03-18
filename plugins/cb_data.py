@@ -5,7 +5,7 @@ from pyrogram.errors import MessageNotModified
 from helper.database import find
 from config import *
 
-# Premium Client Definition
+# Premium Client Definition for bot.py import
 app = Client("PremiumClient", api_id=API_ID, api_hash=API_HASH, session_string=STRING_SESSION) if STRING_SESSION else None
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -21,10 +21,8 @@ async def cancel(bot, update):
 
 @Client.on_callback_query(filters.regex('rename'))
 async def rename(bot, update):
-    # SAFETY: Ensure message exists
     if not update.message:
         return
-    
     msg_id = update.message.reply_to_message_id
     await update.message.delete()
     await bot.send_message(
@@ -51,23 +49,32 @@ async def trigger_worker(bot, update):
         
     media_type = update.data.split("_")[1] 
 
-    # SAFETY: Handle 400 MESSAGE_NOT_MODIFIED
     try:
         await update.message.edit("<b>⏳ Signaling Cloud Worker (GitHub)...</b>")
     except MessageNotModified:
         pass 
 
+    # SAFETY: Ensure user_data is not None
     user_data = find(user_id)
+    if not user_data:
+        # Fallback values if user not in DB
+        user_data = [None, None, False, "By @TechifyBots"]
+
     payload_data = {
-        "chat_id": chat_id, "user_id": user_id, "message_id": file_msg.id,
-        "new_name": new_name, "media_type": media_type,
-        "thumb_id": user_data[0], "caption": user_data[1],
-        "metadata_status": user_data[2], "metadata_text": user_data[3],
-        "log_channel": LOG_CHANNEL
+        "chat_id": int(chat_id), 
+        "user_id": int(user_id), 
+        "message_id": int(file_msg.id),
+        "new_name": new_name, 
+        "media_type": media_type,
+        "thumb_id": user_data[0], 
+        "caption": user_data[1],
+        "metadata_status": user_data[2], 
+        "metadata_text": user_data[3],
+        "log_channel": int(LOG_CHANNEL)
     }
 
     if not GITHUB_TOKEN or not GITHUB_REPO:
-        return await update.message.edit("<b>❌ Error: GITHUB_TOKEN or REPO not set!</b>")
+        return await update.message.edit("<b>❌ Error: GITHUB_TOKEN or REPO not set in Render Variables!</b>")
 
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     dispatch_url = f"https://api.github.com/repos/{GITHUB_REPO}/dispatches"
@@ -77,6 +84,6 @@ async def trigger_worker(bot, update):
         if response.status_code == 204:
             await update.message.edit(f"<b>🚀 Worker Assigned!</b>\n\n<b>📁 Name:</b> `{new_name}`\n<b>⚡ Status:</b> Processing on GitHub...")
         else:
-            await update.message.edit(f"<b>❌ GitHub Error:</b> {response.status_code}")
+            await update.message.edit(f"<b>❌ GitHub Error:</b> {response.status_code}\nCheck if GITHUB_TOKEN is correct.")
     except Exception as e:
         await update.message.edit(f"<b>❌ Request Failed:</b> {str(e)}")

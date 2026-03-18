@@ -30,9 +30,10 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+          # Use the secret if it exists, otherwise use 'TechifyBots'
+          DATABASE_NAME: ${{ secrets.DATABASE_NAME || 'TechifyBots' }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
           LOG_CHANNEL: ${{ secrets.LOG_CHANNEL }}
-          ADMIN: ${{ secrets.ADMIN }}  # <--- ADD THIS LINE
+          ADMIN: ${{ secrets.ADMIN }}
           PAYLOAD: ${{ toJSON(github.event.client_payload.data) }}
         run: python3 worker_script.py

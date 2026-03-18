@@ -22,7 +22,8 @@ LOG_CHANNEL = get_int("LOG_CHANNEL")
 
 # Mongo DB Database Config
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
-DATABASE_NAME = os.environ.get("DATABASE_NAME", "TechifyBots")
+# This line ensures if the secret is empty, it uses "TechifyBots"
+DATABASE_NAME = os.environ.get("DATABASE_NAME", "") or "TechifyBots"
 
 # Other Variables Config
 START_PIC = os.environ.get("START_PIC", "https://graph.org/file/ada3f739fed7efdbe7b08.jpg")

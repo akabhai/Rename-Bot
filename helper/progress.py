@@ -2,21 +2,18 @@ import math
 import time
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# IMPORTANT: Do NOT import "from helper.progress" inside this file.
-# The functions are already here!
-
 async def progress_for_pyrogram(current, total, ud_type, message, start):
     now = time.time()
     diff = now - start
     
-    # Update every 12 seconds to prevent Telegram rate limiting
-    if round(diff % 12.0) == 0 or current == total:
-        percentage = current * 100 / total
+    # Update every 5 seconds OR when completed (current == total)
+    if round(diff % 5.0) == 0 or current == total:
         if diff <= 0:
             return
 
-        speed = current / diff
-        elapsed_time = round(diff) * 1000
+        percentage = current * 100 / total
+        speed = current / diff # bytes per second
+        elapsed_time = round(diff) * 1000 # milliseconds
         
         if speed > 0:
             time_to_completion = round((total - current) / speed) * 1000
@@ -28,24 +25,28 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
         elapsed_time_str = TimeFormatter(milliseconds=elapsed_time)
         estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
 
+        # Create Visual Progress Bar (20 blocks)
         filled_blocks = math.floor(percentage / 5)
         empty_blocks = 20 - filled_blocks
         progress_bar = "■" * filled_blocks + "□" * empty_blocks
 
-        tmp = PROGRESS_BAR.format(
-            round(percentage, 2),
-            humanbytes(current),
-            humanbytes(total),
-            humanbytes(speed),
-            estimated_total_time_str if estimated_total_time_str != '' else '0 s',
-            progress_bar
+        # Build the Status Message
+        # ud_type will be "📥 DOWNLOADING" or "📤 UPLOADING" from worker_script.py
+        status_text = (
+            f"<b>{ud_type}...</b>\n"
+            f"<code>{progress_bar}</code>\n\n"
+            f"<b>📊 Percentage:</b> {round(percentage, 2)}%\n"
+            f"<b>📁 Done:</b> {humanbytes(current)} / {humanbytes(total)}\n"
+            f"<b>🚀 Speed:</b> {humanbytes(speed)}/s\n"
+            f"<b>⏰ ETA:</b> {estimated_total_time_str if estimated_total_time_str != '' else '0 s'}\n"
+            f"<b>⏱️ Elapsed:</b> {elapsed_time_str}"
         )
         
         try:
-            await message.edit(
-                text=f"<b>{ud_type}</b>\n\n{tmp}"
-            )
+            # We use text instead of the old PROGRESS_BAR constant for full control
+            await message.edit(text=status_text)
         except Exception:
+            # Ignore errors like "Message Not Modified" or "Message Deleted"
             pass
 
 def humanbytes(size):
@@ -72,15 +73,6 @@ def TimeFormatter(milliseconds: int) -> str:
         (str(minutes) + "m, ") if minutes else ""
     ) + (
         (str(seconds) + "s, ") if seconds else ""
-    ) + (
-        (str(milliseconds) + "ms, ") if milliseconds else ""
     )
-    return tmp[:-2]
-
-PROGRESS_BAR = """\
-{5}
-
-<b>📁 Size</b> : {1} | {2}
-<b>⏳️ Done</b> : {0}%
-<b>🚀 Speed</b> : {3}/s
-<b>⏰️ ETA</b> : {4} """
+    # Milliseconds are removed for a cleaner look
+    return tmp[:-2] if tmp else "0s"

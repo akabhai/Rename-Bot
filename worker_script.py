@@ -5,7 +5,7 @@ import pyrogram.utils
 # 1. High-Stability Config
 pyrogram.utils.MIN_CHAT_ID = -999999999999
 pyrogram.utils.MIN_CHANNEL_ID = -100999999999999
-WORKERS = 30 # Safe limit to avoid Telegram internal conflicts
+WORKERS = 30 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,14 +17,17 @@ from helper.progress import progress_for_pyrogram, humanbytes
 from helper.set import escape_invalid_curly_brackets
 from config import *
 
-# Load Payload
+# Load Payload Safely
 PAYLOAD_RAW = os.environ.get("PAYLOAD", "{}")
 try:
     payload = json.loads(PAYLOAD_RAW)
 except:
-    payload = eval(PAYLOAD_RAW)
+    try:
+        payload = eval(PAYLOAD_RAW)
+    except:
+        payload = {}
 
-# IDs AND SETTINGS
+# CRITICAL FIX: Explicitly cast all IDs to Integers to prevent 'str' object errors
 CHAT_ID = int(payload.get("chat_id", 0))
 USER_ID = int(payload.get("user_id", 0))
 MSG_ID = int(payload.get("message_id", 0))
@@ -53,6 +56,12 @@ def get_duration(file_path):
     except: return 0
 
 async def run_worker():
+    # Initialize variables to None to prevent NameErrors in 'finally' block
+    path = None
+    processed_path = None
+    ph_path = None
+    status_msg = None
+
     # 1. Authorize with Timeout
     try:
         await asyncio.wait_for(bot.start(), timeout=120)
@@ -60,25 +69,22 @@ async def run_worker():
         logger.error(f"Login Failed: {e}")
         return
 
-    processed_path = None
-    ph_path = None
-    path = None
-    
     try:
-        # 2. Fetch File with Retry
+        # 2. Fetch Message
         msg = await bot.get_messages(CHAT_ID, MSG_ID)
         file = msg.document or msg.video or msg.audio
         if not file:
-            await bot.send_message(CHAT_ID, "❌ **Error:** Source file link expired.")
+            await bot.send_message(CHAT_ID, "❌ **Error:** Source file link expired or not found.")
             return
 
         status_msg = await bot.send_message(CHAT_ID, "<b>🚀 Cloud Worker Active...</b>\n<i>Don't worry, you can use other commands; I'm working in the background!</i>")
         
-        if not os.path.isdir("downloads"): os.mkdir("downloads")
+        # 3. Create Downloads Folder Safely
+        os.makedirs("downloads", exist_ok=True)
         download_path = f"downloads/{int(time.time())}_{file.file_name if file.file_name else 'file'}"
         
-        # 3. HEARTBEAT: Keep Telegram connection alive
-        await bot.send_chat_action(CHAT_ID, "record_video") # Signals "working" status
+        # Heartbeat
+        await bot.send_chat_action(CHAT_ID, "record_video")
 
         # 4. Download
         c_time = time.time()
@@ -89,27 +95,33 @@ async def run_worker():
             progress_args=("📥 DOWNLOADING", status_msg, c_time)
         )
 
-        # 5. Fast Processing (FFmpeg)
+        # 5. Processing
         if METADATA_STATUS:
-            processed_path = f"downloads/meta_{NEW_NAME}"
-            res = await add_metadata(path, processed_path, METADATA_TEXT, status_msg)
-            if not res: processed_path = path
+            meta_path = f"downloads/meta_{NEW_NAME}"
+            res = await add_metadata(path, meta_path, METADATA_TEXT, status_msg)
+            # Use original if metadata fails
+            processed_path = res if res and os.path.exists(res) else path
         else:
             processed_path = f"downloads/{NEW_NAME}"
             os.rename(path, processed_path)
 
         # 6. Thumbnail
         if THUMB_ID:
-            try: ph_path = await bot.download_media(THUMB_ID)
-            except: ph_path = None
+            try:
+                ph_path = await bot.download_media(THUMB_ID)
+            except:
+                ph_path = None
             
         caption = f"**{NEW_NAME}**"
         if CUSTOM_CAPTION:
-            caption = escape_invalid_curly_brackets(CUSTOM_CAPTION, ["filename", "filesize"]).format(
-                filename=NEW_NAME, filesize=humanbytes(file.file_size))
+            try:
+                caption = escape_invalid_curly_brackets(CUSTOM_CAPTION, ["filename", "filesize"]).format(
+                    filename=NEW_NAME, filesize=humanbytes(file.file_size))
+            except:
+                pass
 
-        # 7. Safe High-Speed Upload
-        await bot.send_chat_action(CHAT_ID, "upload_document") # Keep connection hot
+        # 7. Upload
+        await bot.send_chat_action(CHAT_ID, "upload_document")
         c_time = time.time()
         
         if MEDIA_TYPE == "video":
@@ -133,29 +145,32 @@ async def run_worker():
                 progress_args=("📤 UPLOADING", status_msg, c_time)
             )
             
-        await status_msg.delete()
+        if status_msg:
+            await status_msg.delete()
 
     except errors.FloodWait as e:
-        logger.warning(f"FloodWait encountered: {e.value}")
         await asyncio.sleep(e.value)
     except Exception as e:
-        logger.error(f"Worker Exception: {e}")
-        try: await bot.send_message(CHAT_ID, f"❌ **Notification:** Processing interrupted for `{NEW_NAME}`. Please try again.")
-        except: pass
+        logger.error(f"Worker Error: {e}")
+        try:
+            await bot.send_message(CHAT_ID, f"❌ **Notification:** Processing interrupted for `{NEW_NAME}`.\n\n**Reason:** `{str(e)[:100]}`")
+        except:
+            pass
     
     finally:
-        # Safety Cleanup
-        if processed_path and os.path.exists(processed_path): os.remove(processed_path)
-        if ph_path and os.path.exists(ph_path): os.remove(ph_path)
-        if path and os.path.exists(path): os.remove(path)
+        # Secure Cleanup
+        for p in [processed_path, ph_path, path]:
+            if p and os.path.exists(p):
+                try: os.remove(p)
+                except: pass
         
-        # Unlock user status in MongoDB
+        # 8. Reset processing status in MongoDB
         try:
             dbcol.update_one({"_id": USER_ID}, {"$set": {"is_processing": False}})
+            logger.info(f"User {USER_ID} status reset to False.")
         except Exception as db_err:
-            logger.error(f"Failed to reset user busy status: {db_err}")
+            logger.error(f"Failed to reset database status: {db_err}")
 
-        # Shutdown client gracefully
         await bot.stop(block=False)
 
 if __name__ == "__main__":

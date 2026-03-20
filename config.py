@@ -1,29 +1,15 @@
 import os
 
-def get_int(env_name, default=0):
-    val = os.environ.get(env_name, "")
-    try:
-        return int(val)
-    except ValueError:
-        return default
-
-# Required Variables Config
-API_ID = get_int("API_ID")
+# Safe Integer Conversion
+API_ID = int(os.environ.get("API_ID", "0"))
 API_HASH = os.environ.get("API_HASH", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-ADMIN = get_int("ADMIN")
+ADMIN = int(os.environ.get("ADMIN", "0"))
+LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL", "0"))
 
-# Premium 4GB Renaming Client Config
+# String Variables
 STRING_SESSION = os.environ.get("STRING_SESSION", "")
-
-# Log & Force Channel Config
 FORCE_SUBS = os.environ.get("FORCE_SUBS", "")
-LOG_CHANNEL = get_int("LOG_CHANNEL")
-
-# Mongo DB Database Config
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
-# This line ensures if the secret is empty, it uses "TechifyBots"
-DATABASE_NAME = os.environ.get("DATABASE_NAME", "") or "TechifyBots"
-
-# Other Variables Config
+DATABASE_NAME = os.environ.get("DATABASE_NAME", "TechifyBots")
 START_PIC = os.environ.get("START_PIC", "https://graph.org/file/ada3f739fed7efdbe7b08.jpg")

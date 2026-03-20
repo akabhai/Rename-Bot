@@ -5,7 +5,7 @@ import pyrogram.utils
 # 1. High-Stability & Turbo-Speed Config
 pyrogram.utils.MIN_CHAT_ID = -999999999999
 pyrogram.utils.MIN_CHANNEL_ID = -100999999999999
-WORKERS = 200 
+WORKERS = 30 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

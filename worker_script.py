@@ -2,15 +2,16 @@ import os, json, time, asyncio, logging, subprocess
 from pyrogram import Client, errors
 import pyrogram.utils
 
-# 1. High-Stability & Turbo-Speed Config
+# 1. High-Stability & Safe-Speed Config
 pyrogram.utils.MIN_CHAT_ID = -999999999999
 pyrogram.utils.MIN_CHANNEL_ID = -100999999999999
-WORKERS = 30 
+WORKERS = 30 # Safe worker limit as discussed
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from helper.database import find, used_limit, total_rename, total_size, find_one
+# Import helpers and Database collection
+from helper.database import find, used_limit, total_rename, total_size, find_one, dbcol
 from helper.ffmpeg import fix_thumb, add_metadata
 from helper.progress import progress_for_pyrogram, humanbytes
 from helper.set import escape_invalid_curly_brackets
@@ -33,17 +34,16 @@ CUSTOM_CAPTION = payload.get("caption")
 METADATA_STATUS = payload.get("metadata_status", False)
 METADATA_TEXT = payload.get("metadata_text", "By @TechifyBots")
 
-# 2. Setup Client (REMOVED in_memory=True to allow session caching)
+# 2. Setup Client (Optimized for Session Caching)
 bot = Client(
-    "BotWorkerSession", # Fixed name for the session file
+    "BotWorkerSession", 
     bot_token=BOT_TOKEN, 
     api_id=API_ID, 
     api_hash=API_HASH, 
     workers=WORKERS
 )
 
-# app is None because you don't want to use String Session
-app = None 
+app = None # String session not used as per your request
 
 def get_duration(file_path):
     try:
@@ -71,6 +71,7 @@ async def run_worker():
 
         status_msg = await bot.send_message(CHAT_ID, "<b>🚀 High-Speed Worker Started...</b>")
         
+        # 4. Download Phase
         if not os.path.isdir("downloads"): os.mkdir("downloads")
         download_path = f"downloads/{int(time.time())}_{file.file_name if file.file_name else 'file'}"
         
@@ -82,6 +83,7 @@ async def run_worker():
             progress_args=("📥 DOWNLOADING", status_msg, c_time)
         )
 
+        # 5. Processing
         if METADATA_STATUS:
             processed_path = f"downloads/meta_{NEW_NAME}"
             res = await add_metadata(path, processed_path, METADATA_TEXT, status_msg)
@@ -90,6 +92,7 @@ async def run_worker():
             processed_path = f"downloads/{NEW_NAME}"
             os.rename(path, processed_path)
 
+        # 6. Thumbnail & Caption
         if THUMB_ID:
             ph_path = await bot.download_media(THUMB_ID)
             
@@ -98,14 +101,13 @@ async def run_worker():
             caption = escape_invalid_curly_brackets(CUSTOM_CAPTION, ["filename", "filesize"]).format(
                 filename=NEW_NAME, filesize=humanbytes(file.file_size))
 
+        # 7. Upload
         await status_msg.edit("<b>📤 Preparing High-Speed Upload...</b>")
-        
-        dest = CHAT_ID
         c_time = time.time()
         
         if MEDIA_TYPE == "video":
             await bot.send_video(
-                chat_id=dest, 
+                chat_id=CHAT_ID, 
                 video=processed_path, 
                 caption=caption, 
                 thumb=ph_path,
@@ -116,7 +118,7 @@ async def run_worker():
             )
         else:
             await bot.send_document(
-                chat_id=dest, 
+                chat_id=CHAT_ID, 
                 document=processed_path, 
                 caption=caption, 
                 thumb=ph_path,
@@ -132,9 +134,19 @@ async def run_worker():
         except: pass
     
     finally:
+        # Cleanup local files
         if processed_path and os.path.exists(processed_path): os.remove(processed_path)
         if ph_path and os.path.exists(ph_path): os.remove(ph_path)
         if path and os.path.exists(path): os.remove(path)
+        
+        # --- NEW: UNLOCK USER STATUS IN DATABASE ---
+        try:
+            dbcol.update_one({"_id": USER_ID}, {"$set": {"is_processing": False}})
+            logger.info(f"User {USER_ID} has been unlocked.")
+        except Exception as db_err:
+            logger.error(f"Database Reset Error: {db_err}")
+        # --------------------------------------------
+
         await bot.stop(block=False)
 
 if __name__ == "__main__":

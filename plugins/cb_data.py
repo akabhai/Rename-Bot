@@ -11,6 +11,13 @@ app = Client("PremiumClient", api_id=API_ID, api_hash=API_HASH, session_string=S
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 
+# --- NEW: RESET STATUS HANDLER ---
+@Client.on_callback_query(filters.regex("reset_status"))
+async def reset_status(bot, update):
+    user_id = update.from_user.id
+    dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": False}})
+    await update.message.edit("✅ **Processing status has been reset!**\nYou can now start renaming a new file.")
+
 @Client.on_callback_query(filters.regex('cancel'))
 async def cancel(bot, update):
     try:
@@ -43,10 +50,16 @@ async def trigger_worker(bot, update):
     chat_id = update.message.chat.id
     file_msg = update.message.reply_to_message
 
-    # 2. PER-USER QUEUE CHECK (Check if user is already processing)
+    # 2. PER-USER QUEUE CHECK
     user_info = find_one(user_id)
     if user_info and user_info.get("is_processing"):
-        return await update.message.edit("❌ **Wait!** Your one file is already in processing. Please wait for it to finish before starting another.")
+        # Added Inline Button to allow the user to manually reset if stuck
+        return await update.message.edit(
+            "❌ **Wait!** Your one file is already in processing.\n\nIf you think this is a mistake or the previous file failed, click the button below to reset.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Reset Processing Status", callback_data="reset_status")
+            ]])
+        )
 
     # 3. MARK USER AS BUSY
     dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": True}})
@@ -92,10 +105,8 @@ async def trigger_worker(bot, update):
         if response.status_code == 204:
             await update.message.edit(f"<b>🚀 Worker Assigned!</b>\n\n<b>📁 Name:</b> `{new_name}`\n<b>⚡ Status:</b> Processing on GitHub...")
         else:
-            # RESET BUSY STATUS IF GITHUB FAILS TO START
             dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": False}})
             await update.message.edit(f"<b>❌ GitHub Error:</b> {response.status_code}")
     except Exception as e:
-        # RESET BUSY STATUS ON CRASH
         dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": False}})
         await update.message.edit(f"<b>❌ Request Failed:</b> {str(e)}")

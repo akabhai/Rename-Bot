@@ -2,10 +2,10 @@ import os, json, time, asyncio, logging, subprocess
 from pyrogram import Client, errors
 import pyrogram.utils
 
-# 1. High-Stability & Safe-Speed Config
+# 1. High-Stability Config
 pyrogram.utils.MIN_CHAT_ID = -999999999999
 pyrogram.utils.MIN_CHANNEL_ID = -100999999999999
-WORKERS = 30 # Safe worker limit as discussed
+WORKERS = 30 # Safe limit to avoid Telegram internal conflicts
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,13 +19,15 @@ from config import *
 
 # Load Payload
 PAYLOAD_RAW = os.environ.get("PAYLOAD", "{}")
-payload = json.loads(PAYLOAD_RAW)
+try:
+    payload = json.loads(PAYLOAD_RAW)
+except:
+    payload = eval(PAYLOAD_RAW)
 
 # IDs AND SETTINGS
 CHAT_ID = int(payload.get("chat_id", 0))
 USER_ID = int(payload.get("user_id", 0))
 MSG_ID = int(payload.get("message_id", 0))
-LOG_CHANNEL_ID = int(LOG_CHANNEL or 0) 
 
 NEW_NAME = payload.get("new_name", "renamed_file")
 MEDIA_TYPE = payload.get("media_type", "document")
@@ -34,7 +36,7 @@ CUSTOM_CAPTION = payload.get("caption")
 METADATA_STATUS = payload.get("metadata_status", False)
 METADATA_TEXT = payload.get("metadata_text", "By @TechifyBots")
 
-# 2. Setup Client (Optimized for Session Caching)
+# 2. Setup Client
 bot = Client(
     "BotWorkerSession", 
     bot_token=BOT_TOKEN, 
@@ -42,8 +44,6 @@ bot = Client(
     api_hash=API_HASH, 
     workers=WORKERS
 )
-
-app = None # String session not used as per your request
 
 def get_duration(file_path):
     try:
@@ -53,11 +53,11 @@ def get_duration(file_path):
     except: return 0
 
 async def run_worker():
-    # Start Client
+    # 1. Authorize with Timeout
     try:
-        await bot.start()
-    except errors.FloodWait as e:
-        logger.error(f"Telegram login blocked! Wait {e.value} seconds.")
+        await asyncio.wait_for(bot.start(), timeout=120)
+    except Exception as e:
+        logger.error(f"Login Failed: {e}")
         return
 
     processed_path = None
@@ -65,16 +65,22 @@ async def run_worker():
     path = None
     
     try:
+        # 2. Fetch File with Retry
         msg = await bot.get_messages(CHAT_ID, MSG_ID)
         file = msg.document or msg.video or msg.audio
-        if not file: return
+        if not file:
+            await bot.send_message(CHAT_ID, "❌ **Error:** Source file link expired.")
+            return
 
-        status_msg = await bot.send_message(CHAT_ID, "<b>🚀 High-Speed Worker Started...</b>")
+        status_msg = await bot.send_message(CHAT_ID, "<b>🚀 Cloud Worker Active...</b>\n<i>Don't worry, you can use other commands; I'm working in the background!</i>")
         
-        # 4. Download Phase
         if not os.path.isdir("downloads"): os.mkdir("downloads")
         download_path = f"downloads/{int(time.time())}_{file.file_name if file.file_name else 'file'}"
         
+        # 3. HEARTBEAT: Keep Telegram connection alive
+        await bot.send_chat_action(CHAT_ID, "record_video") # Signals "working" status
+
+        # 4. Download
         c_time = time.time()
         path = await bot.download_media(
             message=file,
@@ -83,7 +89,7 @@ async def run_worker():
             progress_args=("📥 DOWNLOADING", status_msg, c_time)
         )
 
-        # 5. Processing
+        # 5. Fast Processing (FFmpeg)
         if METADATA_STATUS:
             processed_path = f"downloads/meta_{NEW_NAME}"
             res = await add_metadata(path, processed_path, METADATA_TEXT, status_msg)
@@ -92,17 +98,18 @@ async def run_worker():
             processed_path = f"downloads/{NEW_NAME}"
             os.rename(path, processed_path)
 
-        # 6. Thumbnail & Caption
+        # 6. Thumbnail
         if THUMB_ID:
-            ph_path = await bot.download_media(THUMB_ID)
+            try: ph_path = await bot.download_media(THUMB_ID)
+            except: ph_path = None
             
         caption = f"**{NEW_NAME}**"
         if CUSTOM_CAPTION:
             caption = escape_invalid_curly_brackets(CUSTOM_CAPTION, ["filename", "filesize"]).format(
                 filename=NEW_NAME, filesize=humanbytes(file.file_size))
 
-        # 7. Upload
-        await status_msg.edit("<b>📤 Preparing High-Speed Upload...</b>")
+        # 7. Safe High-Speed Upload
+        await bot.send_chat_action(CHAT_ID, "upload_document") # Keep connection hot
         c_time = time.time()
         
         if MEDIA_TYPE == "video":
@@ -128,25 +135,27 @@ async def run_worker():
             
         await status_msg.delete()
 
+    except errors.FloodWait as e:
+        logger.warning(f"FloodWait encountered: {e.value}")
+        await asyncio.sleep(e.value)
     except Exception as e:
-        logger.error(f"Error: {e}")
-        try: await bot.send_message(CHAT_ID, f"❌ **Error:** `{str(e)}`")
+        logger.error(f"Worker Exception: {e}")
+        try: await bot.send_message(CHAT_ID, f"❌ **Notification:** Processing interrupted for `{NEW_NAME}`. Please try again.")
         except: pass
     
     finally:
-        # Cleanup local files
+        # Safety Cleanup
         if processed_path and os.path.exists(processed_path): os.remove(processed_path)
         if ph_path and os.path.exists(ph_path): os.remove(ph_path)
         if path and os.path.exists(path): os.remove(path)
         
-        # --- NEW: UNLOCK USER STATUS IN DATABASE ---
+        # Unlock user status in MongoDB
         try:
             dbcol.update_one({"_id": USER_ID}, {"$set": {"is_processing": False}})
-            logger.info(f"User {USER_ID} has been unlocked.")
         except Exception as db_err:
-            logger.error(f"Database Reset Error: {db_err}")
-        # --------------------------------------------
+            logger.error(f"Failed to reset user busy status: {db_err}")
 
+        # Shutdown client gracefully
         await bot.stop(block=False)
 
 if __name__ == "__main__":

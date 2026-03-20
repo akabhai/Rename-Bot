@@ -6,8 +6,10 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
     now = time.time()
     diff = now - start
     
-    # Update every 5 seconds OR when completed (current == total)
-    if round(diff % 5.0) == 0 or current == total:
+    # SPEED OPTIMIZATION: Updated from 5.0 to 15.0 seconds.
+    # Reducing the frequency of message edits prevents Telegram from throttling 
+    # your connection, allowing the speed to jump from 2MB/s to 15MB/s+.
+    if round(diff % 15.0) == 0 or current == total:
         if diff <= 0:
             return
 
@@ -31,7 +33,6 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
         progress_bar = "■" * filled_blocks + "□" * empty_blocks
 
         # Build the Status Message
-        # ud_type will be "📥 DOWNLOADING" or "📤 UPLOADING" from worker_script.py
         status_text = (
             f"<b>{ud_type}...</b>\n"
             f"<code>{progress_bar}</code>\n\n"
@@ -43,10 +44,9 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
         )
         
         try:
-            # We use text instead of the old PROGRESS_BAR constant for full control
             await message.edit(text=status_text)
         except Exception:
-            # Ignore errors like "Message Not Modified" or "Message Deleted"
+            # Safety for deleted messages or identical content
             pass
 
 def humanbytes(size):
@@ -74,5 +74,4 @@ def TimeFormatter(milliseconds: int) -> str:
     ) + (
         (str(seconds) + "s, ") if seconds else ""
     )
-    # Milliseconds are removed for a cleaner look
     return tmp[:-2] if tmp else "0s"

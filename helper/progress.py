@@ -6,11 +6,11 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
     now = time.time()
     diff = now - start
     
-    # SPEED OPTIMIZATION: Updated from 5.0 to 15.0 seconds.
-    # Reducing the frequency of message edits prevents Telegram from throttling 
-    # your connection, allowing the speed to jump from 2MB/s to 15MB/s+.
+    # SPEED & STABILITY OPTIMIZATION: 15.0 seconds interval.
+    # This prevents the bot from getting "stuck" when you use other commands 
+    # because it reduces the load on the Telegram API and prevents rate-limiting.
     if round(diff % 15.0) == 0 or current == total:
-        if diff <= 0:
+        if diff <= 0 or total <= 0:
             return
 
         percentage = current * 100 / total
@@ -27,26 +27,28 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
         elapsed_time_str = TimeFormatter(milliseconds=elapsed_time)
         estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
 
-        # Create Visual Progress Bar (20 blocks)
+        # Create Visual Progress Bar (20 blocks total)
         filled_blocks = math.floor(percentage / 5)
-        empty_blocks = 20 - filled_blocks
-        progress_bar = "■" * filled_blocks + "□" * empty_blocks
+        progress_bar = "■" * filled_blocks + "□" * (20 - filled_blocks)
 
         # Build the Status Message
         status_text = (
             f"<b>{ud_type}...</b>\n"
             f"<code>{progress_bar}</code>\n\n"
-            f"<b>📊 Percentage:</b> {round(percentage, 2)}%\n"
-            f"<b>📁 Done:</b> {humanbytes(current)} / {humanbytes(total)}\n"
+            f"<b>📊 Progress:</b> {round(percentage, 2)}%\n"
+            f"<b>📁 Transferred:</b> {humanbytes(current)} / {humanbytes(total)}\n"
             f"<b>🚀 Speed:</b> {humanbytes(speed)}/s\n"
             f"<b>⏰ ETA:</b> {estimated_total_time_str if estimated_total_time_str != '' else '0 s'}\n"
             f"<b>⏱️ Elapsed:</b> {elapsed_time_str}"
         )
         
         try:
+            # Edit the message with the new status
             await message.edit(text=status_text)
         except Exception:
-            # Safety for deleted messages or identical content
+            # CRITICAL SAFETY: If the message is deleted or the bot is busy 
+            # with other commands, we simply 'pass' so the transfer continues 
+            # in the background without getting stuck.
             pass
 
 def humanbytes(size):
@@ -74,4 +76,5 @@ def TimeFormatter(milliseconds: int) -> str:
     ) + (
         (str(seconds) + "s, ") if seconds else ""
     )
+    # Return formatted string or '0s' if empty
     return tmp[:-2] if tmp else "0s"

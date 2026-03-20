@@ -5,8 +5,6 @@ import pyrogram.utils
 # 1. High-Stability & Turbo-Speed Config
 pyrogram.utils.MIN_CHAT_ID = -999999999999
 pyrogram.utils.MIN_CHANNEL_ID = -100999999999999
-
-# Increase workers to 200 to fully utilize GitHub's 1Gbps network
 WORKERS = 200 
 
 logging.basicConfig(level=logging.INFO)
@@ -35,9 +33,17 @@ CUSTOM_CAPTION = payload.get("caption")
 METADATA_STATUS = payload.get("metadata_status", False)
 METADATA_TEXT = payload.get("metadata_text", "By @TechifyBots")
 
-# 2. Setup Clients with Turbo Workers
-bot = Client("BotWork", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH, in_memory=True, workers=WORKERS)
-app = Client("PremWork", session_string=STRING_SESSION, api_id=API_ID, api_hash=API_HASH, in_memory=True, workers=WORKERS) if STRING_SESSION else None
+# 2. Setup Client (REMOVED in_memory=True to allow session caching)
+bot = Client(
+    "BotWorkerSession", # Fixed name for the session file
+    bot_token=BOT_TOKEN, 
+    api_id=API_ID, 
+    api_hash=API_HASH, 
+    workers=WORKERS
+)
+
+# app is None because you don't want to use String Session
+app = None 
 
 def get_duration(file_path):
     try:
@@ -47,23 +53,24 @@ def get_duration(file_path):
     except: return 0
 
 async def run_worker():
-    await bot.start()
-    if app: await app.start()
-    
+    # Start Client
+    try:
+        await bot.start()
+    except errors.FloodWait as e:
+        logger.error(f"Telegram login blocked! Wait {e.value} seconds.")
+        return
+
     processed_path = None
     ph_path = None
     path = None
     
     try:
-        # 3. Fetch File
         msg = await bot.get_messages(CHAT_ID, MSG_ID)
         file = msg.document or msg.video or msg.audio
         if not file: return
 
-        # Send ONLY ONE status message to avoid flooding
         status_msg = await bot.send_message(CHAT_ID, "<b>🚀 High-Speed Worker Started...</b>")
         
-        # 4. Download Phase
         if not os.path.isdir("downloads"): os.mkdir("downloads")
         download_path = f"downloads/{int(time.time())}_{file.file_name if file.file_name else 'file'}"
         
@@ -75,17 +82,14 @@ async def run_worker():
             progress_args=("📥 DOWNLOADING", status_msg, c_time)
         )
 
-        # 5. Fast Processing Phase
         if METADATA_STATUS:
             processed_path = f"downloads/meta_{NEW_NAME}"
-            # Ensure add_metadata uses '-c copy' for instant processing
             res = await add_metadata(path, processed_path, METADATA_TEXT, status_msg)
             if not res: processed_path = path
         else:
             processed_path = f"downloads/{NEW_NAME}"
             os.rename(path, processed_path)
 
-        # 6. Thumbnail & Caption
         if THUMB_ID:
             ph_path = await bot.download_media(THUMB_ID)
             
@@ -94,26 +98,24 @@ async def run_worker():
             caption = escape_invalid_curly_brackets(CUSTOM_CAPTION, ["filename", "filesize"]).format(
                 filename=NEW_NAME, filesize=humanbytes(file.file_size))
 
-        # 7. Fast Upload Phase
-        use_premium = (file.file_size > 2000000000 and app is not None)
-        target = app if use_premium else bot
-        dest = LOG_CHANNEL_ID if use_premium else CHAT_ID
+        await status_msg.edit("<b>📤 Preparing High-Speed Upload...</b>")
         
+        dest = CHAT_ID
         c_time = time.time()
+        
         if MEDIA_TYPE == "video":
-            sent_file = await target.send_video(
+            await bot.send_video(
                 chat_id=dest, 
                 video=processed_path, 
                 caption=caption, 
                 thumb=ph_path,
                 duration=get_duration(processed_path), 
-                supports_streaming=True, # Critical for speed
+                supports_streaming=True,
                 progress=progress_for_pyrogram, 
                 progress_args=("📤 UPLOADING", status_msg, c_time)
             )
         else:
-            # FIXED variable name: 'target' instead of 'target_client'
-            sent_file = await target.send_document(
+            await bot.send_document(
                 chat_id=dest, 
                 document=processed_path, 
                 caption=caption, 
@@ -121,9 +123,6 @@ async def run_worker():
                 progress=progress_for_pyrogram, 
                 progress_args=("📤 UPLOADING", status_msg, c_time)
             )
-
-        if use_premium:
-            await bot.copy_message(CHAT_ID, LOG_CHANNEL_ID, sent_file.id)
             
         await status_msg.delete()
 
@@ -133,13 +132,9 @@ async def run_worker():
         except: pass
     
     finally:
-        # Cleanup Files
         if processed_path and os.path.exists(processed_path): os.remove(processed_path)
         if ph_path and os.path.exists(ph_path): os.remove(ph_path)
         if path and os.path.exists(path): os.remove(path)
-        
-        # Safe Stop
-        if app: await app.stop(block=False)
         await bot.stop(block=False)
 
 if __name__ == "__main__":

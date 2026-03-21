@@ -13,6 +13,7 @@ from config import *
 
 token = BOT_TOKEN
 botid = token.split(':')[0]
+NEW_START_PIC = "https://i.ibb.co/yc631jGC/Generated-Image-March-21-2026-8-18-PM.png"
 
 # Local humanbytes to fix Circular Import
 def humanbytes(size):
@@ -31,21 +32,20 @@ async def start(client, message):
     user_id = message.chat.id
     insert(int(user_id))
     
-    loading_sticker_message = await message.reply_sticker("CAACAgUAAxkBAAJ93Wb23tu2uAf_XIY2qORqOoURNsPTAAIoEQACQVaxV35FIcz8xQdgNgQ")
-    await asyncio.sleep(2)
-    await loading_sticker_message.delete()
-    
-    text = f"""{message.from_user.mention} \nɪ  ᴀᴍ  ᴀɴ  ᴀᴅᴠᴀɴᴄᴇ  ꜰɪʟᴇ  ʀᴇɴᴀᴍᴇʀ  ᴀɴᴅ  ᴄᴏɴᴠᴇʀᴛᴇʀ  ʙᴏᴛ  ᴡɪᴛʜ  ᴘᴇʀᴍᴀɴᴇɴᴛ  ᴀɴᴅ  ᴄᴜsᴛᴏᴍ  ᴛʜᴜᴍʙɴᴀɪʟ  sᴜᴘᴘᴏʀᴛ.\n\nᴊᴜsᴛ  sᴇɴᴅ  ᴍᴇ  ᴀɴʏ  ᴠɪᴅᴇᴏ  ᴏʀ ᴅᴏᴄᴜᴍᴇɴᴛ !!\nᴏᴡɴᴇʀ @TechifyBots</b>"""
+    text = f"""{message.from_user.mention} \nɪ  ᴀᴍ  ᴀɴ  ᴀᴅᴠᴀɴᴄᴇ  ꜰɪʟᴇ  ʀᴇɴᴀᴍᴇʀ  ᴀɴᴅ  ᴄᴏɴᴠᴇʀᴛᴇʀ  ʙᴏᴛ  ᴡɪᴛʜ  ᴘᴇʀᴍᴀɴᴇɴᴛ  ᴀɴᴅ  ᴄᴜsᴛᴏᴍ  ᴛʜᴜᴍʙɴᴀɪʟ  sᴜᴘᴘᴏʀᴛ.\n\nᴊᴜsᴛ  sᴇɴᴅ  ᴍᴇ  ᴀɴʏ  ᴠɪᴅᴇᴏ  ᴏʀ ᴅᴏᴄᴜᴍᴇɴᴛ !!\n\n<b>Coded By & Owned By : @tgbots_bynexa</b>"""
     
     button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 Updates", url="https://telegram.me/TechifyBots"),
-        InlineKeyboardButton("💬 Support", url="https://telegram.me/TechifySupport")],
-        [InlineKeyboardButton("🛠️ Help", callback_data='help'),
-        InlineKeyboardButton("❤️‍🩹 About", callback_data='about')],
-        [InlineKeyboardButton("🧑‍💻 Developer 🧑‍💻", url="https://telegram.me/TechifyBots")]
+        [InlineKeyboardButton("📢 Updates", url="https://t.me/tgbots_bynexa"),
+        InlineKeyboardButton("💬 Support", url="https://t.me/feedbackprozbot")],
+        [InlineKeyboardButton("🛠️ Help", callback_data='help')]
         ])
     
-    await message.reply_photo(photo=START_PIC, caption=text, reply_markup=button, quote=True)
+    await message.reply_photo(
+        photo=NEW_START_PIC, 
+        caption=text, 
+        reply_markup=button, 
+        quote=True
+    )
     return    
 
 @Client.on_message((filters.private & (filters.document | filters.audio | filters.video)) | filters.channel & (filters.document | filters.audio | filters.video))
@@ -63,17 +63,15 @@ async def send_doc(client, message):
 
     # Fetch User data
     user_deta = find_one(user_id)
-    # Check for Unlimited Expiry (granted by Ads)
     unlimited_expiry = user_deta.get("unlimited_expiry", 0)
     
-    # 1. ACCESS GRANTED (User has active time from Ads)
+    # 1. ACCESS GRANTED (Unlimited Mode via Ads)
     if time.time() < unlimited_expiry:
         media = message.document or message.video or message.audio
         dcid = FileId.decode(media.file_id).dc_id
         filename = media.file_name
-        time_left = int((unlimited_expiry - time.time()) / 60) # Minutes
+        time_left = int((unlimited_expiry - time.time()) / 60)
 
-        # Update Bot Stats
         botdata(int(botid))
         bot_info = find_one(int(botid))
         total_rename(int(botid), bot_info.get('total_rename', 0))
@@ -84,7 +82,7 @@ async def send_doc(client, message):
             f"⏳ **Expires in:** `{time_left} min`\n\n"
             f"**File Name :** `{filename}`\n"
             f"**File Size :** {humanize.naturalsize(media.file_size)}\n"
-            f"**DC ID :** {dcid}",
+            f"**DC ID :** {dcid}\n\n<b>By : @tgbots_bynexa</b>",
             reply_to_message_id=message.id,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📝 Rename", callback_data="rename"),
@@ -92,7 +90,7 @@ async def send_doc(client, message):
             ])
         )
     
-    # 2. ACCESS DENIED (User must watch Ads)
+    # 2. ACCESS DENIED (Watch Ads)
     else:
         # REPLACE with your actual Render URL
         render_url = "https://my-renamer-bot.onrender.com" 
@@ -102,10 +100,8 @@ async def send_doc(client, message):
             InlineKeyboardButton("🔓 Watch 3 Ads to Unlock 6h", web_app=WebAppInfo(url=mini_app_link))
         ]])
         
-        return await message.reply_text(
-            f"❌ **Access Denied!**\n\n"
-            f"You do not have active renaming time. To use the service, please watch 3 ads to unlock **6 Hours of Unlimited Access**.\n\n"
-            f"**User ID:** <code>{user_id}</code>",
-            reply_to_message_id=message.id,
+        return await message.reply_photo(
+            photo=NEW_START_PIC,
+            caption=f"❌ **Access Denied!**\n\nTo use the renaming service, please watch 3 ads to unlock **6 Hours of Unlimited Access**.\n\n**User ID:** <code>{user_id}</code>\n<b>Owned By : @tgbots_bynexa</b>",
             reply_markup=button
         )

@@ -103,7 +103,7 @@ async def trigger_worker(bot, update):
     try:
         response = requests.post(dispatch_url, headers=headers, json={"event_type": "start_rename", "client_payload": {"data": payload_data}})
         if response.status_code == 204:
-            await update.message.edit(f"<b>🚀 Worker Assigned!</b>\n\n<b>📁 Name:</b> `{new_name}`\n<b>⚡ Status:</b> Processing on GitHub...")
+            await update.message.edit(f"<b>🚀 Worker Assigned!</b>\n\n<b>📁 Name:</b> `{new_name}`\n<b>⚡ Status:</b> Processing on Server...")
         else:
             dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": False}})
             await update.message.edit(f"<b>❌ GitHub Error:</b> {response.status_code}")

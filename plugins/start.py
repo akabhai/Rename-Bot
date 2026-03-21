@@ -57,94 +57,55 @@ async def send_doc(client, message):
         try:
             await client.get_chat_member(FORCE_SUBS, user_id)
         except UserNotParticipant:
-            _newus = find_one(user_id)
-            user = _newus["usertype"]
-            await message.reply_text("<b>Hello Dear \n\nYou Need To Join In My Channel To Use Me\n\nKindly Please Join Channel</b>",
-                reply_to_message_id=message.id,
+            return await message.reply_text(
+                "<b>Kindly Join My Channel to use me!</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔺 Update Channel 🔺", url=f"https://t.me/{FORCE_SUBS}")]]))
-            return
-		
-    botdata(int(botid))
-    bot_data = find_one(int(botid))
-    prrename = bot_data.get('total_rename', 0)
-    prsize = bot_data.get('total_size', 0)
+
+    # Fetch User data
     user_deta = find_one(user_id)
-    
-    # --- NEW: ADS SYSTEM CHECK ---
+    # Check for Unlimited Expiry (granted by Ads)
     unlimited_expiry = user_deta.get("unlimited_expiry", 0)
-    is_unlimited = time.time() < unlimited_expiry
-    # -----------------------------
+    
+    # 1. ACCESS GRANTED (User has active time from Ads)
+    if time.time() < unlimited_expiry:
+        media = message.document or message.video or message.audio
+        dcid = FileId.decode(media.file_id).dc_id
+        filename = media.file_name
+        time_left = int((unlimited_expiry - time.time()) / 60) # Minutes
 
-    used_date = user_deta["date"]
-    buy_date = user_deta["prexdate"]
-    daily = user_deta["daily"]
-    user_type = user_deta["usertype"]
+        # Update Bot Stats
+        botdata(int(botid))
+        bot_info = find_one(int(botid))
+        total_rename(int(botid), bot_info.get('total_rename', 0))
+        total_size(int(botid), bot_info.get('total_size', 0), media.file_size)
 
-    c_time = time.time()
-
-    # Skip flood control for unlimited users
-    if not is_unlimited:
-        if user_type == "Free":
-            LIMIT = 120
-        else:
-            LIMIT = 10
-        then = used_date + LIMIT
-        left = round(then - c_time)
-        if left > 0:
-            conversion = datetime.timedelta(seconds=left)
-            return await message.reply_text(f"<b>Flood Control Is Active. Please Wait For {str(conversion)} </b>", reply_to_message_id=message.id)
-
-    media = message.document or message.video or message.audio
-    dcid = FileId.decode(media.file_id).dc_id
-    filename = media.file_name
-    used = user_deta["used_limit"]
-    limit = user_deta["uploadlimit"]
-
-    # 1. Logic for UNLIMITED users (Ads watched)
-    if is_unlimited:
-        time_left = int((unlimited_expiry - time.time()) / 60)
-        total_rename(int(botid), prrename)
-        total_size(int(botid), prsize, media.file_size)
         return await message.reply_text(
-            f"🚀 **Unlimited Mode Active!**\nAccess expires in: `{time_left} min`\n\n**File:** `{filename}`\n**Size:** {humanize.naturalsize(media.file_size)}",
+            f"✅ **Access Granted!** (Unlimited Mode)\n"
+            f"⏳ **Expires in:** `{time_left} min`\n\n"
+            f"**File Name :** `{filename}`\n"
+            f"**File Size :** {humanize.naturalsize(media.file_size)}\n"
+            f"**DC ID :** {dcid}",
             reply_to_message_id=message.id,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📝 Rename", callback_data="rename"), InlineKeyboardButton("✖️ Cancel", callback_data="cancel")]])
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📝 Rename", callback_data="rename"),
+                 InlineKeyboardButton("✖️ Cancel", callback_data="cancel")]
+            ])
         )
-
-    # 2. Logic for Standard users (Limit checks)
-    expi = daily - int(time.mktime(time.strptime(str(date_.today()), '%Y-%m-%d')))
-    if expi != 0:
-        daily_(user_id, int(time.mktime(time.strptime(str(date_.today()), '%Y-%m-%d'))))
-        used_limit(user_id, 0)
-        used = 0
-
-    remain = limit - used
-    if remain < int(media.file_size):
-        # Provide both Upgrade and Ad-Watch option
-        button = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 Upgrade Plan", callback_data="upgrade")],
-            [InlineKeyboardButton("🔓 Watch Ads to Unlock 6h", web_app=WebAppInfo(url=f"https://my-renamer-bot.onrender.com/{user_id}"))]
-        ])
-        return await message.reply_text(f"Daily Quota Exhausted.\n\n<b>Used:</b> {humanbytes(used)}\n<b>Limit:</b> {humanbytes(limit)}\n\nWatch 3 ads to unlock 6 hours of unlimited processing!", reply_markup=button)
-
-    if media.file_size > 2147483648 and not STRING_SESSION:
-        button = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 Upgrade Plan", callback_data="upgrade")],
-            [InlineKeyboardButton("🔓 Watch Ads to Unlock 6h", web_app=WebAppInfo(url=f"https://my-renamer-bot.onrender.com/{user_id}"))]
-        ])
-        return await message.reply_text("You Can't Upload More Than 2GB on Free Plan.\n\nWatch ads to bypass this limit for 6 hours!", reply_markup=button)
-
-    # Check Plan Expiry
-    if buy_date:
-        if not check_expi(buy_date):
-            uploadlimit(user_id, 2147483648)
-            usertype(user_id, "Free")
     
-    total_rename(int(botid), prrename)
-    total_size(int(botid), prsize, media.file_size)
-    
-    await message.reply_text(
-        f"__What Do You Want Me To Do With This File ?__\n\n**File Name :** `{filename}`\n**File Size :** {humanize.naturalsize(media.file_size)}\n**DC ID :** {dcid}",
-        reply_to_message_id=message.id,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📝 Rename", callback_data="rename"), InlineKeyboardButton("✖️ Cancel", callback_data="cancel")]])
-    )
+    # 2. ACCESS DENIED (User must watch Ads)
+    else:
+        # REPLACE with your actual Render URL
+        render_url = "https://my-renamer-bot.onrender.com" 
+        mini_app_link = f"{render_url}/ads/{user_id}"
+        
+        button = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔓 Watch 3 Ads to Unlock 6h", web_app=WebAppInfo(url=mini_app_link))
+        ]])
+        
+        return await message.reply_text(
+            f"❌ **Access Denied!**\n\n"
+            f"You do not have active renaming time. To use the service, please watch 3 ads to unlock **6 Hours of Unlimited Access**.\n\n"
+            f"**User ID:** <code>{user_id}</code>",
+            reply_to_message_id=message.id,
+            reply_markup=button
+        )

@@ -37,15 +37,23 @@ async def admincm(bot,message):
 
 
 @Client.on_callback_query(filters.regex('help'))
-async def help(bot,update):
+async def help(bot, update):
     text = script.HELP_TXT.format(update.from_user.mention)
-    keybord = InlineKeyboardMarkup([ 
-                    [InlineKeyboardButton('🏞 Thumbnail', callback_data='thumbnail'),
-                    InlineKeyboardButton('✏ Caption', callback_data='caption')],
-                    [InlineKeyboardButton('🏠 Home', callback_data='home'),
-                    InlineKeyboardButton('💵 Donate', callback_data='donate')]
-                   ])
-    await update.message.edit(text = text,reply_markup = keybord)
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('🏞 Thumbnail', callback_data='thumbnail'),
+            InlineKeyboardButton('✏ Caption', callback_data='caption')
+        ],
+        [
+            InlineKeyboardButton('🏠 Home', callback_data='home')
+        ]
+    ])
+
+    await update.message.edit_text(
+        text=text,
+        reply_markup=keyboard
+    )
 
 
 
@@ -78,10 +86,10 @@ async def donate(bot,update):
 async def home_callback_handler(bot, query):
     text = f"""{query.from_user.mention} \n<b>ɪ  ᴀᴍ  ᴀɴ  ᴀᴅᴠᴀɴᴄᴇ  ꜰɪʟᴇ  ʀᴇɴᴀᴍᴇʀ  ᴀɴᴅ  ᴄᴏɴᴠᴇʀᴛᴇʀ  ʙᴏᴛ  ᴡɪᴛʜ  ᴘᴇʀᴍᴀɴᴇɴᴛ  ᴀɴᴅ  ᴄᴜsᴛᴏᴍ  ᴛʜᴜᴍʙɴᴀɪʟ  sᴜᴘᴘᴏʀᴛ.\n\nᴊᴜsᴛ  sᴇɴᴅ  ᴍᴇ  ᴀɴʏ  ᴠɪᴅᴇᴏ  ᴏʀ ᴅᴏᴄᴜᴍᴇɴᴛ !!\n\nᴏᴡɴᴇʀ - @TechifyBots</b>"""
     keybord = InlineKeyboardMarkup([  
-                    [InlineKeyboardButton("📢 Updates", url="https://telegram.me/TechifyBots"),
-                    InlineKeyboardButton("💬 Support", url="https://telegram.me/TechifySupport")],
+                    [InlineKeyboardButton("📢 Updates", url="https://t.me/tgbots_bynexa"),
+                    InlineKeyboardButton("💬 Support", url="https://t.me/feedbackprozbot")],
                     [InlineKeyboardButton("🛠️ Help", callback_data='help'),
 		            InlineKeyboardButton("❤️‍🩹 About", callback_data='about')],
-                    [InlineKeyboardButton("🧑‍💻 Developer 🧑‍💻", url="https://telegram.me/TechifyBots")]
+                    [InlineKeyboardButton("🧑‍💻 Developer 🧑‍💻", url="https://t.me/tgbots_bynexa")]
 		  ])
     await query.message.edit_text(text=text, reply_markup=keybord)

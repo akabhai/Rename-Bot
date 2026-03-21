@@ -1,18 +1,17 @@
 import pymongo
 import os
+import time
 from helper.date import add_date
 from config import *
+
 mongo = pymongo.MongoClient(DATABASE_URL)
 db = mongo[DATABASE_NAME]
 dbcol = db["user"]
-
-
 
 # Total User
 def total_user():
     user = dbcol.count_documents({})
     return user
-
 
 # Insert Bot Data
 def botdata(chat_id):
@@ -23,31 +22,28 @@ def botdata(chat_id):
     except:
         pass
 
-
 # Total Renamed Files
 def total_rename(chat_id, renamed_file):
     now = int(renamed_file) + 1
     dbcol.update_one({"_id": chat_id}, {"$set": {"total_rename": str(now)}})
-
 
 # Total Renamed File Size
 def total_size(chat_id, total_size, now_file_size):
     now = int(total_size) + now_file_size
     dbcol.update_one({"_id": chat_id}, {"$set": {"total_size": str(now)}})
 
-
 # Insert User Data
 def insert(chat_id):
     user_id = int(chat_id)
+    # Added "unlimited_expiry" and "is_processing" for the Queue and Ad systems
     user_det = {"_id": user_id, "file_id": None, "caption": None, "daily": 0, "date": 0,
                 "uploadlimit": 5368709120, "used_limit": 0, "usertype": "Free", "prexdate": None,
-                "metadata": False, "metadata_code": "By @TechifyBots"}
+                "metadata": False, "metadata_code": "By @TechifyBots", 
+                "unlimited_expiry": 0, "is_processing": False}
     try:
         dbcol.insert_one(user_det)
     except:
         return True
-        pass
-
 
 # Add Thumbnail Data
 def addthumb(chat_id, file_id):
@@ -55,9 +51,6 @@ def addthumb(chat_id, file_id):
 
 def delthumb(chat_id):
     dbcol.update_one({"_id": chat_id}, {"$set": {"file_id": None}})
-
-
-
 
 # ============= Metadata Function Code =============== #
 
@@ -67,9 +60,14 @@ def setmeta(chat_id, bool_meta):
 def setmetacode(chat_id, metadata_code):
     dbcol.update_one({"_id": chat_id}, {"$set": {"metadata_code": metadata_code}})
 
-# ============= Metadata Function Code =============== #
+# ============= Ads & Unlimited Access Logic =============== #
 
+def grant_unlimited(chat_id):
+    # Current time + 6 hours (21600 seconds)
+    expiry = int(time.time()) + 21600
+    dbcol.update_one({"_id": int(chat_id)}, {"$set": {"unlimited_expiry": expiry}})
 
+# ========================================================== #
 
 # Add Caption Data
 def addcaption(chat_id, caption):
@@ -77,8 +75,6 @@ def addcaption(chat_id, caption):
 
 def delcaption(chat_id):
     dbcol.update_one({"_id": chat_id}, {"$set": {"caption": None}})
-
-
 
 def dateupdate(chat_id, date):
     dbcol.update_one({"_id": chat_id}, {"$set": {"date": date}})
@@ -91,7 +87,6 @@ def usertype(chat_id, type):
 
 def uploadlimit(chat_id, limit):
     dbcol.update_one({"_id": chat_id}, {"$set": {"uploadlimit": limit}})
-
 
 # Add Premium Data
 def addpre(chat_id):
@@ -108,23 +103,14 @@ def find(chat_id):
     id = {"_id": chat_id}
     x = dbcol.find(id)
     for i in x:
-        file = i["file_id"]
-        try:
-            caption = i["caption"]
-        except:
-            caption = None
-        try:
-            metadata = i["metadata"]
-        except:
-            metadata = False
-        try:
-            metadata_code = i["metadata_code"]
-        except:
-            metadata_code = None
-            
-
-
-        return [file, caption, metadata, metadata_code]
+        file = i.get("file_id")
+        caption = i.get("caption")
+        metadata = i.get("metadata", False)
+        metadata_code = i.get("metadata_code")
+        # Added expiry to the return list (Index 4)
+        unlimited_expiry = i.get("unlimited_expiry", 0)
+        
+        return [file, caption, metadata, metadata_code, unlimited_expiry]
 
 def getid():
     values = []

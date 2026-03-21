@@ -31,4 +31,4 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DATABASE_NAME = os.environ.get("DATABASE_NAME") or "TechifyBots"
 
 # Other Variables Config
-START_PIC = os.environ.get("START_PIC", "https://graph.org/file/ada3f739fed7efdbe7b08.jpg")
+START_PIC = os.environ.get("START_PIC", "https://i.ibb.co/yc631jGC/Generated-Image-March-21-2026-8-18-PM.png")

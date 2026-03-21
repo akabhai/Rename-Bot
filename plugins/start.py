@@ -3,7 +3,7 @@ import os, re, datetime, random, asyncio, time, humanize
 from script import *
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram import Client, filters, enums
-from pyrogram.types import (InlineKeyboardButton, InlineKeyboardMarkup)
+from pyrogram.types import (InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo)
 from helper.database import botdata, find_one, total_user
 from helper.database import insert, find_one, used_limit, usertype, uploadlimit, addpredata, total_rename, total_size
 from pyrogram.file_id import FileId
@@ -70,6 +70,11 @@ async def send_doc(client, message):
     prsize = bot_data.get('total_size', 0)
     user_deta = find_one(user_id)
     
+    # --- NEW: ADS SYSTEM CHECK ---
+    unlimited_expiry = user_deta.get("unlimited_expiry", 0)
+    is_unlimited = time.time() < unlimited_expiry
+    # -----------------------------
+
     used_date = user_deta["date"]
     buy_date = user_deta["prexdate"]
     daily = user_deta["daily"]
@@ -77,53 +82,69 @@ async def send_doc(client, message):
 
     c_time = time.time()
 
-    if user_type == "Free":
-        LIMIT = 120
-    else:
-        LIMIT = 10
+    # Skip flood control for unlimited users
+    if not is_unlimited:
+        if user_type == "Free":
+            LIMIT = 120
+        else:
+            LIMIT = 10
+        then = used_date + LIMIT
+        left = round(then - c_time)
+        if left > 0:
+            conversion = datetime.timedelta(seconds=left)
+            return await message.reply_text(f"<b>Flood Control Is Active. Please Wait For {str(conversion)} </b>", reply_to_message_id=message.id)
 
-    then = used_date + LIMIT
-    left = round(then - c_time)
-    conversion = datetime.timedelta(seconds=left)
-    ltime = str(conversion)
-    
-    if left > 0:
-        await message.reply_text(f"<b>Flood Control Is Active. Please Wait For {ltime} </b>", reply_to_message_id=message.id)
-    else:
-        media = message.document or message.video or message.audio
-        dcid = FileId.decode(media.file_id).dc_id
-        filename = media.file_name
-        
-        used = user_deta["used_limit"]
-        limit = user_deta["uploadlimit"]
-        
-        # Check Expiry/Reset Daily Limit
-        expi = daily - int(time.mktime(time.strptime(str(date_.today()), '%Y-%m-%d')))
-        if expi != 0:
-            daily_(user_id, int(time.mktime(time.strptime(str(date_.today()), '%Y-%m-%d'))))
-            used_limit(user_id, 0)
-            used = 0
+    media = message.document or message.video or message.audio
+    dcid = FileId.decode(media.file_id).dc_id
+    filename = media.file_name
+    used = user_deta["used_limit"]
+    limit = user_deta["uploadlimit"]
 
-        remain = limit - used
-        if remain < int(media.file_size):
-            await message.reply_text(f"Daily Quota Exhausted.\n\n<b>Used:</b> {humanbytes(used)}\n<b>Limit:</b> {humanbytes(limit)}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💳 Upgrade", callback_data="upgrade")]]))
-            return
-
-        if media.file_size > 2147483648 and not STRING_SESSION:
-            await message.reply_text("You Can't Upload More Than 2GB without a Premium Plan.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💳 Upgrade", callback_data="upgrade")]]))
-            return
-
-        # Check Plan Expiry
-        if buy_date:
-            if not check_expi(buy_date):
-                uploadlimit(user_id, 2147483648)
-                usertype(user_id, "Free")
-        
+    # 1. Logic for UNLIMITED users (Ads watched)
+    if is_unlimited:
+        time_left = int((unlimited_expiry - time.time()) / 60)
         total_rename(int(botid), prrename)
         total_size(int(botid), prsize, media.file_size)
-        
-        await message.reply_text(
-            f"__What Do You Want Me To Do With This File ?__\n\n**File Name :** `{filename}`\n**File Size :** {humanize.naturalsize(media.file_size)}\n**DC ID :** {dcid}",
+        return await message.reply_text(
+            f"🚀 **Unlimited Mode Active!**\nAccess expires in: `{time_left} min`\n\n**File:** `{filename}`\n**Size:** {humanize.naturalsize(media.file_size)}",
             reply_to_message_id=message.id,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📝 Rename", callback_data="rename"), InlineKeyboardButton("✖️ Cancel", callback_data="cancel")]])
         )
+
+    # 2. Logic for Standard users (Limit checks)
+    expi = daily - int(time.mktime(time.strptime(str(date_.today()), '%Y-%m-%d')))
+    if expi != 0:
+        daily_(user_id, int(time.mktime(time.strptime(str(date_.today()), '%Y-%m-%d'))))
+        used_limit(user_id, 0)
+        used = 0
+
+    remain = limit - used
+    if remain < int(media.file_size):
+        # Provide both Upgrade and Ad-Watch option
+        button = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Upgrade Plan", callback_data="upgrade")],
+            [InlineKeyboardButton("🔓 Watch Ads to Unlock 6h", web_app=WebAppInfo(url=f"https://my-renamer-bot.onrender.com/{user_id}"))]
+        ])
+        return await message.reply_text(f"Daily Quota Exhausted.\n\n<b>Used:</b> {humanbytes(used)}\n<b>Limit:</b> {humanbytes(limit)}\n\nWatch 3 ads to unlock 6 hours of unlimited processing!", reply_markup=button)
+
+    if media.file_size > 2147483648 and not STRING_SESSION:
+        button = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Upgrade Plan", callback_data="upgrade")],
+            [InlineKeyboardButton("🔓 Watch Ads to Unlock 6h", web_app=WebAppInfo(url=f"https://my-renamer-bot.onrender.com/{user_id}"))]
+        ])
+        return await message.reply_text("You Can't Upload More Than 2GB on Free Plan.\n\nWatch ads to bypass this limit for 6 hours!", reply_markup=button)
+
+    # Check Plan Expiry
+    if buy_date:
+        if not check_expi(buy_date):
+            uploadlimit(user_id, 2147483648)
+            usertype(user_id, "Free")
+    
+    total_rename(int(botid), prrename)
+    total_size(int(botid), prsize, media.file_size)
+    
+    await message.reply_text(
+        f"__What Do You Want Me To Do With This File ?__\n\n**File Name :** `{filename}`\n**File Size :** {humanize.naturalsize(media.file_size)}\n**DC ID :** {dcid}",
+        reply_to_message_id=message.id,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📝 Rename", callback_data="rename"), InlineKeyboardButton("✖️ Cancel", callback_data="cancel")]])
+    )

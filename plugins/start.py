@@ -1,5 +1,5 @@
 from datetime import date as date_
-import os, re, datetime, random, asyncio, time, humanize
+import os, re, datetime, random, asyncio, time, humanize, requests  # Added requests
 from script import *
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram import Client, filters, enums
@@ -11,11 +11,29 @@ from helper.database import daily as daily_
 from helper.date import check_expi
 from config import *
 
+# --- CONFIGURATION FOR TBC BOT ---
+# 1. Replace with your TBC Webhook URL (The 'api_status' command link)
+TBC_API_WEBHOOK = "https://api.telebotcreator.com/v1/webhook/YOUR_CHECK_URL_HERE"
+# 2. Replace with your Central Verify Bot Username (without @)
+VERIFY_BOT_USERNAME = "YourVerifyBotUsername"
+# ---------------------------------
+
 token = BOT_TOKEN
 botid = token.split(':')[0]
 NEW_START_PIC = "https://i.ibb.co/yc631jGC/Generated-Image-March-21-2026-8-18-PM.png"
 
-# Local humanbytes to fix Circular Import
+def check_tbc_verify_status(user_id):
+    """Asks the TBC Verify Bot if the user has access"""
+    try:
+        # We send the UID and the BID (Bot ID) to the Hub
+        payload = {"uid": user_id, "bid": "renamer_bot"}
+        response = requests.post(TBC_API_WEBHOOK, json=payload, timeout=5)
+        data = response.json()
+        return data.get("access", False) # Returns True if verified, False otherwise
+    except Exception as e:
+        print(f"API Error: {e}")
+        return False
+
 def humanbytes(size):
     if not size:
         return "0 B"
@@ -40,12 +58,7 @@ async def start(client, message):
         [InlineKeyboardButton("🛠️ Help", callback_data='help')]
         ])
     
-    await message.reply_photo(
-        photo=NEW_START_PIC, 
-        caption=text, 
-        reply_markup=button, 
-        quote=True
-    )
+    await message.reply_photo(photo=NEW_START_PIC, caption=text, reply_markup=button, quote=True)
     return    
 
 @Client.on_message((filters.private & (filters.document | filters.audio | filters.video)) | filters.channel & (filters.document | filters.audio | filters.video))
@@ -61,16 +74,14 @@ async def send_doc(client, message):
                 "<b>Kindly Join My Channel to use me!</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔺 Update Channel 🔺", url=f"https://t.me/{FORCE_SUBS}")]]))
 
-    # Fetch User data
-    user_deta = find_one(user_id)
-    unlimited_expiry = user_deta.get("unlimited_expiry", 0)
+    # --- UPDATED: ASK TBC BOT FOR ACCESS ---
+    is_verified = check_tbc_verify_status(user_id)
     
-    # 1. ACCESS GRANTED (Unlimited Mode via Ads)
-    if time.time() < unlimited_expiry:
+    # 1. ACCESS GRANTED (Verified via Hub Bot)
+    if is_verified:
         media = message.document or message.video or message.audio
         dcid = FileId.decode(media.file_id).dc_id
         filename = media.file_name
-        time_left = int((unlimited_expiry - time.time()) / 60)
 
         botdata(int(botid))
         bot_info = find_one(int(botid))
@@ -78,8 +89,8 @@ async def send_doc(client, message):
         total_size(int(botid), bot_info.get('total_size', 0), media.file_size)
 
         return await message.reply_text(
-            f"✅ **Access Granted!** (Unlimited Mode)\n"
-            f"⏳ **Expires in:** `{time_left} min`\n\n"
+            f"✅ **Access Verified!**\n"
+            f"Your 6-hour session is currently active.\n\n"
             f"**File Name :** `{filename}`\n"
             f"**File Size :** {humanize.naturalsize(media.file_size)}\n"
             f"**DC ID :** {dcid}\n\n<b>By : @tgbots_bynexa</b>",
@@ -90,18 +101,23 @@ async def send_doc(client, message):
             ])
         )
     
-    # 2. ACCESS DENIED (Watch Ads)
+    # 2. ACCESS DENIED (Redirect to Central Verify Bot)
     else:
-        # REPLACE with your actual Render URL
-        render_url = "https://my-renamer-bot.onrender.com" 
-        mini_app_link = f"{render_url}/ads/{user_id}"
+        # Link to your Central Verify Bot on TBC
+        verify_link = f"https://t.me/{VERIFY_BOT_USERNAME}?start=verify"
         
         button = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔓 Watch 3 Ads to Unlock 6h", web_app=WebAppInfo(url=mini_app_link))
+            InlineKeyboardButton("🔓 Get 6h Access (Watch Ads)", url=verify_link)
         ]])
         
         return await message.reply_photo(
             photo=NEW_START_PIC,
-            caption=f"❌ **Access Denied!**\n\nTo use the renaming service, please watch 3 ads to unlock **6 Hours of Unlimited Access**.\n\n**User ID:** <code>{user_id}</code>\n<b>Owned By : @tgbots_bynexa</b>",
+            caption=(
+                f"❌ **Access Denied!**\n\n"
+                f"To use the renaming service, you must verify in our **Central Hub**.\n"
+                f"Verification gives you **6 Hours of Unlimited Access** to all our bots.\n\n"
+                f"**User ID:** <code>{user_id}</code>\n"
+                f"<b>Owned By : @tgbots_bynexa</b>"
+            ),
             reply_markup=button
         )

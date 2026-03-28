@@ -13,9 +13,9 @@ from config import *
 
 # --- CONFIGURATION FOR TBC BOT ---
 # 1. Replace with your TBC Webhook URL (The 'api_status' command link)
-TBC_API_WEBHOOK = "https://api.telebotcreator.com/v1/webhook/YOUR_CHECK_URL_HERE"
+TBC_API_WEBHOOK = "https://api.telebotcreator.com/new-webhook?data=gAAAAABpx_JJFWG9fiNQhuR63iP2GKc5OLfAzvsyeMgysR5Sp9oMAkkS-1HNNfukvY0MlJU2NWQAZdCmkUDzpQEvAg4U6rQMrLoEC5Y9EIJaZE9frbr68K4hyXNYQ7w1TrB19rIHmcvG7UTdTW7KsUGm57JuayB7e9F8QRUEJ90n29iLeaXlTcGkCxHHFoGumo5_UyVn5ndO"
 # 2. Replace with your Central Verify Bot Username (without @)
-VERIFY_BOT_USERNAME = "YourVerifyBotUsername"
+VERIFY_BOT_USERNAME = "get_access_nexabot"
 # ---------------------------------
 
 token = BOT_TOKEN

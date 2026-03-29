@@ -5,7 +5,10 @@ from pyrogram.errors import MessageNotModified
 from helper.database import find, find_one, dbcol
 from config import *
 
-# --- RESET STATUS HANDLER ---
+# --- RESTORE THIS LINE (The one bot.py is looking for) ---
+app = Client("PremiumClient", api_id=API_ID, api_hash=API_HASH, session_string=STRING_SESSION) if STRING_SESSION else None
+# ---------------------------------------------------------
+
 @Client.on_callback_query(filters.regex("reset_status"))
 async def reset_status(bot, update):
     user_id = update.from_user.id
@@ -27,40 +30,34 @@ async def rename(bot, update):
     await bot.send_message(
         chat_id=update.message.chat.id,
         text="__Please Enter The New Filename...__\n\n**Note :** Extension Not Required",
-        reply_to_message_id=update.message.reply_to_message.id, # Reply to the original file
+        reply_to_message_id=update.message.reply_to_message.id,
         reply_markup=ForceReply(True)
     )
 
-# --- NEW: THIS HANDLES THE TEXT YOU SEND (THE NEW NAME) ---
+# --- THIS HANDLES THE FILENAME TEXT RESPONSE ---
 @Client.on_message(filters.private & filters.reply & filters.text)
 async def filename_handler(bot, message):
-    # Check if the user is replying to the "Enter New Filename" message
     if message.reply_to_message.text and "Please Enter The New Filename" in message.reply_to_message.text:
         new_name = message.text
-        await message.delete() # Delete user's text message
         
-        # Show the "Select Type" buttons
         buttons = [[
             InlineKeyboardButton("📁 Document", callback_data="upload_document"),
             InlineKeyboardButton("🎥 Video", callback_data="upload_video")
-        ],[
-            InlineKeyboardButton("🎵 Audio", callback_data="upload_audio")
         ]]
         
         await bot.send_message(
             chat_id=message.chat.id,
-            text=f"**New Name:** `{new_name}`\n\nSelect the media type you want to convert this file into:",
-            reply_to_message_id=message.reply_to_message.reply_to_message_id, # Link back to original file
+            text=f"**New Name:** `{new_name}`\n\nSelect the media type:",
+            reply_to_message_id=message.reply_to_message.reply_to_message_id,
             reply_markup=InlineKeyboardMarkup(buttons)
         )
 
-# --- TRIGGER GITHUB WORKER ---
-@Client.on_callback_query(filters.regex("upload_document|upload_video|upload_audio"))
+# --- TRIGGER WORKER ---
+@Client.on_callback_query(filters.regex("upload_document|upload_video"))
 async def trigger_worker(bot, update):
     await update.answer()
     user_id = update.from_user.id
     
-    # 1. PER-USER QUEUE CHECK
     user_info = find_one(user_id)
     if user_info and user_info.get("is_processing"):
         return await update.message.edit(
@@ -68,10 +65,9 @@ async def trigger_worker(bot, update):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Reset Status", callback_data="reset_status")]])
         )
 
-    # 2. EXTRACT NEW NAME
-    # We get it from the message text we created in filename_handler
+    # Extract name from the message text
     try:
-        new_name = update.message.text.split("New Name:")[1].split("\n")[0].replace("`", "").strip()
+        new_name = update.message.text.split("**New Name:** `")[1].split("`")[0].strip()
     except:
         new_name = "renamed_file.mkv"
 
@@ -79,9 +75,8 @@ async def trigger_worker(bot, update):
     media_type = update.data.split("_")[1] 
     file_msg = update.message.reply_to_message
 
-    await update.message.edit("<b>⏳ Signaling Cloud Worker (GitHub)...</b>")
+    await update.message.edit("<b>⏳ Signaling Cloud Worker...</b>")
 
-    # Construct Payload
     user_data = find(user_id)
     payload_data = {
         "chat_id": int(update.message.chat.id), 
@@ -94,13 +89,14 @@ async def trigger_worker(bot, update):
     }
 
     # Dispatch to GitHub
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+    GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     dispatch_url = f"https://api.github.com/repos/{GITHUB_REPO}/dispatches"
     
-    response = requests.post(dispatch_url, headers=headers, json={"event_type": "start_rename", "client_payload": {"data": payload_data}})
-    
-    if response.status_code == 204:
-        await update.message.edit(f"<b>🚀 Worker Assigned!</b>\n\n<b>📁 Name:</b> `{new_name}`\n<b>⚡ Status:</b> Processing...")
-    else:
+    try:
+        requests.post(dispatch_url, headers=headers, json={"event_type": "start_rename", "client_payload": {"data": payload_data}})
+        await update.message.edit(f"<b>🚀 Worker Assigned!</b>\n\n<b>📁 Name:</b> `{new_name}`")
+    except:
         dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": False}})
-        await update.message.edit(f"<b>❌ GitHub Error:</b> {response.status_code}")
+        await update.message.edit("❌ Failed to contact worker.")

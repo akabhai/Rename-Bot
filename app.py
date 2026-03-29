@@ -5,38 +5,34 @@ import time
 import os
 
 app = Flask(__name__)
-CORS(app) # Allows GitHub to talk to Render
+CORS(app)
 
-# MongoDB Configuration
+# MongoDB Configuration - MATCHING YOUR DATABASE.PY
 DB_URL = os.environ.get("DATABASE_URL", "")
 DB_NAME = os.environ.get("DATABASE_NAME", "TechifyBots")
 client = MongoClient(DB_URL)
 db = client[DB_NAME]
-users = db["users"]
+dbcol = db["user"] # MATCHES database.py collection name
 
 @app.route('/')
 def index():
-    return "Bot Verification API is Running"
+    return "✅ Renamer Verification Hub is Online"
 
 @app.route('/verify', methods=['GET', 'POST'])
 def verify_callback():
-    # Get UID from query params
     user_id = request.args.get('uid')
     
     if not user_id:
         return jsonify({"status": "failed", "error": "No User ID"}), 400
 
     try:
-        # 1. Convert to Integer (Telegram IDs are numbers)
         uid_int = int(user_id)
+        expiry_time = int(time.time()) + 21600 # 6 Hours
         
-        # 2. Calculate Expiry (Now + 6 Hours)
-        expiry_time = time.time() + 21600
-        
-        # 3. Update MongoDB
-        # We use {"id": uid_int} because your renamer bot uses "id" field
-        users.update_one(
-            {"id": uid_int}, 
+        # UPDATE MONGODB - MATCHING YOUR DATABASE.PY STRUCTURE
+        # Using _id as the filter and unlimited_expiry as the field
+        dbcol.update_one(
+            {"_id": uid_int}, 
             {"$set": {"unlimited_expiry": expiry_time}}, 
             upsert=True
         )
@@ -44,6 +40,7 @@ def verify_callback():
         return jsonify({
             "status": "success", 
             "message": "6h access granted",
+            "user_id": uid_int,
             "expiry": expiry_time
         }), 200
         

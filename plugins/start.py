@@ -1,9 +1,9 @@
 from datetime import date as date_
-import os, re, datetime, random, asyncio, time, humanize, requests
+import os, re, datetime, random, asyncio, time, humanize
 from script import *
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram import Client, filters, enums
-from pyrogram.types import (InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo)
+from pyrogram.types import (InlineKeyboardButton, InlineKeyboardMarkup)
 from helper.database import botdata, find_one, total_user
 from helper.database import insert, find_one, used_limit, usertype, uploadlimit, addpredata, total_rename, total_size
 from pyrogram.file_id import FileId
@@ -11,39 +11,15 @@ from helper.database import daily as daily_
 from helper.date import check_expi
 from config import *
 
-# --- CONFIGURATION FOR TBC BOT ---
-TBC_API_WEBHOOK = "https://api.telebotcreator.com/new-webhook?data=gAAAAABpyNCy3DDGIGUvHifvyzJLA2pjrYdCH8tn52nbyibnPc1EMmd3Vg08pMAQABZVuomLHNvSL_LIZ4JArgLLMYb5SHdgK-OagkvkWoJO1FVja0uB6NUhow4Ndh4uxWTYpFs7WYJcmeI9O14hceN2KR9qwYA5yBIyW6xHRHI5gOv4M5rOvyO2eS0t_JD96rIL0s6Uki7r"
-VERIFY_BOT_USERNAME = "get_access_nexabot"
-# ---------------------------------
+# --- GITHUB AD SYSTEM CONFIG ---
+# Replace this with your actual GitHub Pages URL
+GITHUB_SITE_URL = "https://akapass.github.io" 
+# Ensure RENDER_URL is set in your Render Environment Variables (e.g., https://your-bot.onrender.com)
+# -------------------------------
 
 token = BOT_TOKEN
 botid = token.split(':')[0]
 NEW_START_PIC = "https://i.ibb.co/yc631jGC/Generated-Image-March-21-2026-8-18-PM.png"
-
-def check_tbc_verify_status(user_id):
-    """Pings TBC Hub with strict string-based ID checking"""
-    try:
-        # 1. MUST match the 'bid' used in TBC commands exactly
-        # 2. MUST send user_id as a string
-        payload = {
-            "uid": str(user_id), 
-            "bid": "renamer_bot" 
-        }
-        
-        # Increased timeout to 10s for slow TBC response
-        response = requests.post(TBC_API_WEBHOOK, json=payload, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            # Log the response to your Render logs for debugging
-            print(f"TBC API Response for {user_id}: {data}") 
-            return data.get("access", False)
-            
-        print(f"TBC API Error: Status Code {response.status_code}")
-        return False
-    except Exception as e:
-        print(f"Verify Hub API Connection Error: {e}")
-        return False
 
 def humanbytes(size):
     if not size: return "0 B"
@@ -83,16 +59,20 @@ async def send_doc(client, message):
                 "<b>Kindly Join My Channel to use me!</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔺 Update Channel 🔺", url=f"https://t.me/{FORCE_SUBS}")]]))
 
-    # --- CONTACTING TBC VERIFY HUB ---
-    # Show a typing action while checking API
-    await client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
-    is_verified = check_tbc_verify_status(user_id)
+    # 1. FETCH USER DATA FROM MONGODB
+    user_deta = find_one(user_id)
+    # Check if 'unlimited_expiry' exists, otherwise default to 0
+    unlimited_expiry = user_deta.get("unlimited_expiry", 0)
     
-    if is_verified:
+    # 2. CHECK IF ACCESS IS ACTIVE (Current time < Expiry time)
+    if time.time() < unlimited_expiry:
         # --- ACCESS GRANTED ---
         media = message.document or message.video or message.audio
         dcid = FileId.decode(media.file_id).dc_id
         filename = media.file_name
+        
+        # Calculate time left in minutes
+        time_left = int((unlimited_expiry - time.time()) / 60)
 
         botdata(int(botid))
         bot_info = find_one(int(botid))
@@ -100,8 +80,8 @@ async def send_doc(client, message):
         total_size(int(botid), bot_info.get('total_size', 0), media.file_size)
 
         return await message.reply_text(
-            f"✅ **Access Verified!**\n"
-            f"Your session is currently active.\n\n"
+            f"✅ **Access Granted!** (Unlimited Mode)\n"
+            f"⏳ **Expires in:** `{time_left} min`\n\n"
             f"**File Name :** `{filename}`\n"
             f"**File Size :** {humanize.naturalsize(media.file_size)}\n"
             f"**DC ID :** {dcid}\n\n<b>By : @tgbots_bynexa</b>",
@@ -112,20 +92,24 @@ async def send_doc(client, message):
             ])
         )
     
+    # 3. ACCESS DENIED (User needs to verify on GitHub site)
     else:
-        # --- ACCESS DENIED (Master Redirect) ---
-        verify_link = f"https://t.me/{VERIFY_BOT_USERNAME}?start=verify"
+        # Construct the dynamic link for the GitHub site
+        # uid = user id, api = this bot's Render URL
+        verify_link = f"{GITHUB_SITE_URL}/?uid={user_id}&api={RENDER_URL}"
+        
+        button = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔓 Unlock 6h Unlimited Access", url=verify_link)
+        ]])
         
         return await message.reply_photo(
             photo=NEW_START_PIC,
             caption=(
                 f"❌ **Access Denied!**\n\n"
-                f"To use the renaming service, you must verify in our **Central Hub**.\n\n"
-                f"Verification gives you **6 Hours of Unlimited Access** to all our bots.\n\n"
+                f"To use the renaming service, please complete a short verification.\n"
+                f"This will unlock **6 Hours of Unlimited Access**.\n\n"
                 f"**User ID:** <code>{user_id}</code>\n"
                 f"<b>Owned By : @tgbots_bynexa</b>"
             ),
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔓 Get 6h Access (Watch Ads)", url=verify_link)
-            ]])
+            reply_markup=button
         )

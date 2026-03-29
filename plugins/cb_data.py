@@ -5,108 +5,102 @@ from pyrogram.errors import MessageNotModified
 from helper.database import find, find_one, dbcol
 from config import *
 
-# Premium Client Definition
-app = Client("PremiumClient", api_id=API_ID, api_hash=API_HASH, session_string=STRING_SESSION) if STRING_SESSION else None
-
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
-
-# --- NEW: RESET STATUS HANDLER ---
+# --- RESET STATUS HANDLER ---
 @Client.on_callback_query(filters.regex("reset_status"))
 async def reset_status(bot, update):
     user_id = update.from_user.id
     dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": False}})
-    await update.message.edit("✅ **Processing status has been reset!**\nYou can now start renaming a new file.")
+    await update.message.edit("✅ **Processing status has been reset!**")
 
 @Client.on_callback_query(filters.regex('cancel'))
 async def cancel(bot, update):
     try:
-        if update.message:
-            await update.message.delete()
+        await update.message.delete()
     except:
         pass
 
 @Client.on_callback_query(filters.regex('rename'))
 async def rename(bot, update):
     if not update.message: return
-    msg_id = update.message.reply_to_message_id
+    # This asks the user for the new name using ForceReply
     await update.message.delete()
     await bot.send_message(
         chat_id=update.message.chat.id,
         text="__Please Enter The New Filename...__\n\n**Note :** Extension Not Required",
-        reply_to_message_id=msg_id,
+        reply_to_message_id=update.message.reply_to_message.id, # Reply to the original file
         reply_markup=ForceReply(True)
     )
 
-@Client.on_callback_query(filters.regex("upload_document|upload_video|upload_audio"))
-async def trigger_worker(bot, update):
-    # 1. Answer callback to prevent Telegram retries
-    await update.answer()
-    
-    if not update.message or not update.message.reply_to_message:
-        return await update.message.edit("❌ Error: Message expired.")
-
-    user_id = update.from_user.id
-    chat_id = update.message.chat.id
-    file_msg = update.message.reply_to_message
-
-    # 2. PER-USER QUEUE CHECK
-    user_info = find_one(user_id)
-    if user_info and user_info.get("is_processing"):
-        # Added Inline Button to allow the user to manually reset if stuck
-        return await update.message.edit(
-            "❌ **Wait!** Your one file is already in processing.\n\nIf you think this is a mistake or the previous file failed, click the button below to reset.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔄 Reset Processing Status", callback_data="reset_status")
-            ]])
+# --- NEW: THIS HANDLES THE TEXT YOU SEND (THE NEW NAME) ---
+@Client.on_message(filters.private & filters.reply & filters.text)
+async def filename_handler(bot, message):
+    # Check if the user is replying to the "Enter New Filename" message
+    if message.reply_to_message.text and "Please Enter The New Filename" in message.reply_to_message.text:
+        new_name = message.text
+        await message.delete() # Delete user's text message
+        
+        # Show the "Select Type" buttons
+        buttons = [[
+            InlineKeyboardButton("📁 Document", callback_data="upload_document"),
+            InlineKeyboardButton("🎥 Video", callback_data="upload_video")
+        ],[
+            InlineKeyboardButton("🎵 Audio", callback_data="upload_audio")
+        ]]
+        
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text=f"**New Name:** `{new_name}`\n\nSelect the media type you want to convert this file into:",
+            reply_to_message_id=message.reply_to_message.reply_to_message_id, # Link back to original file
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
 
-    # 3. MARK USER AS BUSY
-    dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": True}})
+# --- TRIGGER GITHUB WORKER ---
+@Client.on_callback_query(filters.regex("upload_document|upload_video|upload_audio"))
+async def trigger_worker(bot, update):
+    await update.answer()
+    user_id = update.from_user.id
+    
+    # 1. PER-USER QUEUE CHECK
+    user_info = find_one(user_id)
+    if user_info and user_info.get("is_processing"):
+        return await update.message.edit(
+            "❌ **Wait!** Your one file is already in processing.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Reset Status", callback_data="reset_status")]])
+        )
 
+    # 2. EXTRACT NEW NAME
+    # We get it from the message text we created in filename_handler
     try:
-        raw_text = update.message.text
-        new_name = raw_text.split(":-")[-1].replace("`", "").strip()
+        new_name = update.message.text.split("New Name:")[1].split("\n")[0].replace("`", "").strip()
     except:
         new_name = "renamed_file.mkv"
-        
+
+    dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": True}})
     media_type = update.data.split("_")[1] 
+    file_msg = update.message.reply_to_message
 
-    try:
-        await update.message.edit("<b>⏳ Signaling Cloud Worker (GitHub)...</b>")
-    except MessageNotModified:
-        pass 
+    await update.message.edit("<b>⏳ Signaling Cloud Worker (GitHub)...</b>")
 
+    # Construct Payload
     user_data = find(user_id)
-    if not user_data: user_data = [None, None, False, "By @TechifyBots"]
-
     payload_data = {
-        "chat_id": int(chat_id), 
+        "chat_id": int(update.message.chat.id), 
         "user_id": int(user_id), 
         "message_id": int(file_msg.id),
         "new_name": new_name, 
         "media_type": media_type,
         "thumb_id": user_data[0], 
-        "caption": user_data[1],
-        "metadata_status": user_data[2], 
-        "metadata_text": user_data[3],
         "log_channel": int(LOG_CHANNEL)
     }
 
-    if not GITHUB_TOKEN or not GITHUB_REPO:
-        dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": False}})
-        return await update.message.edit("<b>❌ Error: GITHUB_TOKEN or REPO not set!</b>")
-
+    # Dispatch to GitHub
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     dispatch_url = f"https://api.github.com/repos/{GITHUB_REPO}/dispatches"
     
-    try:
-        response = requests.post(dispatch_url, headers=headers, json={"event_type": "start_rename", "client_payload": {"data": payload_data}})
-        if response.status_code == 204:
-            await update.message.edit(f"<b>🚀 Worker Assigned!</b>\n\n<b>📁 Name:</b> `{new_name}`\n<b>⚡ Status:</b> Processing on Server...")
-        else:
-            dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": False}})
-            await update.message.edit(f"<b>❌ GitHub Error:</b> {response.status_code}")
-    except Exception as e:
+    response = requests.post(dispatch_url, headers=headers, json={"event_type": "start_rename", "client_payload": {"data": payload_data}})
+    
+    if response.status_code == 204:
+        await update.message.edit(f"<b>🚀 Worker Assigned!</b>\n\n<b>📁 Name:</b> `{new_name}`\n<b>⚡ Status:</b> Processing...")
+    else:
         dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": False}})
-        await update.message.edit(f"<b>❌ Request Failed:</b> {str(e)}")
+        await update.message.edit(f"<b>❌ GitHub Error:</b> {response.status_code}")

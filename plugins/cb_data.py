@@ -41,9 +41,9 @@ async def rename(bot, update):
         reply_markup=ForceReply(True)
     )
 
-# --- 3. THIS CATCHES THE NEW NAME YOU TYPE (CRITICAL FIX) ---
+# --- 3. CATCH THE NEW NAME TYPED BY THE USER ---
 @Client.on_message(filters.private & filters.reply & filters.text)
-async def catch_new_name(bot, message):
+async def filename_handler(bot, message):
     # Check if user is replying to the exact prompt
     if message.reply_to_message.text and "Please Enter The New Filename" in message.reply_to_message.text:
         new_name = message.text
@@ -53,7 +53,7 @@ async def catch_new_name(bot, message):
         await message.delete()
         await message.reply_to_message.delete()
         
-        # Show media type buttons and store the new name in the text
+        # Show media type buttons (Removed markdown around 'New Name' to make extraction safe)
         buttons = [
             [InlineKeyboardButton("📁 Document", callback_data="upload_document"),
              InlineKeyboardButton("🎥 Video", callback_data="upload_video")],
@@ -62,12 +62,12 @@ async def catch_new_name(bot, message):
         
         await bot.send_message(
             chat_id=message.chat.id,
-            text=f"**New Name:** `{new_name}`\n\nSelect the output format:",
+            text=f"New Name: {new_name}\n\nSelect the output format:",
             reply_to_message_id=original_msg_id,
             reply_markup=InlineKeyboardMarkup(buttons)
         )
 
-# --- 4. TRIGGER WORKER AFTER SELECTING FORMAT ---
+# --- 4. PROCESS THE FILE (TRIGGER WORKER) ---
 @Client.on_callback_query(filters.regex("upload_document|upload_video|upload_audio"))
 async def trigger_worker(bot, update):
     await update.answer()
@@ -92,13 +92,13 @@ async def trigger_worker(bot, update):
     # MARK USER AS BUSY
     dbcol.update_one({"_id": user_id}, {"$set": {"is_processing": True}})
 
-    # CRITICAL FIX: Extract the typed name from the message text
+    # CRITICAL FIX: Extract the typed name from the plain text
     try:
         raw_text = update.message.text
-        # Extracts "design" from "**New Name:** `design`"
-        new_name = raw_text.split("**New Name:** ")[1].split("\n")[0].replace("`", "").strip()
+        # Splits perfectly using plain text
+        new_name = raw_text.split("New Name: ")[1].split("\n")[0].strip()
     except Exception as e:
-        print(f"Error parsing name: {e}")
+        print(f"Name Extraction Error: {e}")
         new_name = "renamed_file.mkv"
         
     media_type = update.data.split("_")[1] 

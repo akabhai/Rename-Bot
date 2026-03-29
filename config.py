@@ -32,3 +32,11 @@ DATABASE_NAME = os.environ.get("DATABASE_NAME") or "TechifyBots"
 
 # Other Variables Config
 START_PIC = os.environ.get("START_PIC", "https://i.ibb.co/yc631jGC/Generated-Image-March-21-2026-8-18-PM.png")
+import os
+
+# ... (other configs) ...
+
+# YOUR GITHUB PAGES URL
+GITHUB_SITE_URL = "https://akapass.github.io" 
+# YOUR RENDER APP URL (e.g., https://my-renamer-bot.onrender.com)
+RENDER_URL = os.environ.get("RENDER_URL", "https://my-renamer-bot.onrender.com")

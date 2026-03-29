@@ -23,16 +23,26 @@ NEW_START_PIC = "https://i.ibb.co/yc631jGC/Generated-Image-March-21-2026-8-18-PM
 def check_tbc_verify_status(user_id):
     """Pings TBC Hub with strict string-based ID checking"""
     try:
-        # Convert user_id to string to match TBC storage exactly
-        payload = {"uid": str(user_id), "bid": "renamer_bot"}
-        response = requests.post(TBC_API_WEBHOOK, json=payload, timeout=8)
+        # 1. MUST match the 'bid' used in TBC commands exactly
+        # 2. MUST send user_id as a string
+        payload = {
+            "uid": str(user_id), 
+            "bid": "renamer_bot" 
+        }
+        
+        # Increased timeout to 10s for slow TBC response
+        response = requests.post(TBC_API_WEBHOOK, json=payload, timeout=10)
         
         if response.status_code == 200:
             data = response.json()
+            # Log the response to your Render logs for debugging
+            print(f"TBC API Response for {user_id}: {data}") 
             return data.get("access", False)
+            
+        print(f"TBC API Error: Status Code {response.status_code}")
         return False
     except Exception as e:
-        print(f"Verify Hub API Error: {e}")
+        print(f"Verify Hub API Connection Error: {e}")
         return False
 
 def humanbytes(size):

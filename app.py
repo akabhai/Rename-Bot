@@ -21,28 +21,20 @@ def index():
 @app.route('/verify', methods=['GET', 'POST'])
 def verify_callback():
     user_id = request.args.get('uid')
-    
     if not user_id:
-        return jsonify({"status": "failed", "error": "No User ID"}), 400
+        return jsonify({"status": "failed"}), 400
 
-    try:
-        uid_int = int(user_id)
-        expiry_time = int(time.time()) + 21600 # 6 Hours
-        
-        # UPDATE MONGODB - MATCHING YOUR DATABASE.PY STRUCTURE
-        # Using _id as the filter and unlimited_expiry as the field
-        dbcol.update_one(
-            {"_id": uid_int}, 
-            {"$set": {"unlimited_expiry": expiry_time}}, 
-            upsert=True
-        )
-        
-        return jsonify({
-            "status": "success", 
-            "message": "6h access granted",
-            "user_id": uid_int,
-            "expiry": expiry_time
-        }), 200
+    # 1. Convert to Int
+    uid_int = int(user_id)
+    expiry_time = int(time.time()) + 21600 # 6 Hours
+    
+    # 2. Update 'user' collection (Singular) and field 'unlimited_expiry'
+    dbcol.update_one(
+        {"_id": uid_int}, 
+        {"$set": {"unlimited_expiry": expiry_time}}, 
+        upsert=True
+    )
+    return jsonify({"status": "success"}), 200
         
     except Exception as e:
         return jsonify({"status": "failed", "error": str(e)}), 500

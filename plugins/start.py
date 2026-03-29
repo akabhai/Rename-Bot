@@ -13,13 +13,12 @@ async def send_doc(client, message):
     insert(int(user_id))
 
     # 1. Fetch data using your existing helper
-    user_deta = find_one(user_id)
-    
-    # 2. Get unlimited_expiry (defaults to 0 if not found)
+   user_deta = find_one(user_id)
+    # Ensure this field matches exactly what app.py updates!
     unlimited_expiry = user_deta.get("unlimited_expiry", 0)
     
-    # 3. Check Access
     if time.time() < unlimited_expiry:
+        # Access Granted logic...
         # --- ACCESS GRANTED ---
         media = message.document or message.video or message.audio
         time_left = int((unlimited_expiry - time.time()) / 60)

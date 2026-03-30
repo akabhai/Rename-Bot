@@ -18,7 +18,6 @@ NEW_START_PIC = "https://i.ibb.co/yc631jGC/Generated-Image-March-21-2026-8-18-PM
 # --- YOUR GITHUB SITE URL ---
 GITHUB_SITE_URL = "https://akapass.github.io"
 
-# Fix for Line 16: Perfect 4-space indentation applied
 def humanbytes(size):
     if not size:
         return "0 B"
@@ -97,7 +96,11 @@ async def send_doc(client, message):
     
     # 2. ACCESS DENIED (Watch Ads via GitHub Site)
     else:
-        verify_link = f"{GITHUB_SITE_URL}/?uid={user_id}&api={RENDER_URL}"
+        # --- NEW DYNAMIC LINK ---
+        # Includes bot=Renamer%20Bot to customize the website's title dynamically
+        import urllib.parse
+        bot_name_encoded = urllib.parse.quote("Renamer Bot")
+        verify_link = f"{GITHUB_SITE_URL}/?uid={user_id}&api={RENDER_URL}&bot={bot_name_encoded}"
         
         button = InlineKeyboardMarkup([[
             InlineKeyboardButton("🔓 Watch Ads to Unlock 6h", url=verify_link)
